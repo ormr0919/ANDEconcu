@@ -113,6 +113,9 @@
     <button class="btn enorme primario" type="button" id="btn-jugar">
       <span class="btn-icono">🎡</span><span>Jugar<small>Partida con ranking</small></span>
     </button>
+    <button class="btn grande secundario sim-btn" type="button" id="btn-sim">
+      <span class="btn-icono">📝</span><span>Simulacro de examen<small id="i-sim">Como el examen real</small></span>
+    </button>
     <button class="btn grande secundario entreno" type="button" id="btn-entreno">
       <span class="btn-icono">🧠</span><span>Entrenamiento personalizado<small id="i-entreno">10 preguntas de lo que más te falta</small></span>
     </button>
@@ -201,6 +204,48 @@
       <ol class="plan" id="pf-plan"></ol>
       <button class="btn grande primario" type="button" id="btn-pf-entreno">🧠 Empezar entrenamiento personalizado</button>
     </section>
+  </section>
+
+  <!-- Simulacro de examen -->
+  <section class="pantalla" id="p-sim" hidden>
+    <div class="sim-cab">
+      <span class="sim-prog" id="s-prog"></span>
+      <span class="sim-reloj" id="s-reloj">00:00</span>
+    </div>
+    <div class="sim-barra" aria-hidden="true"><i id="s-barra"></i></div>
+    <div class="tarjeta pregunta">
+      <p class="q-meta" id="s-meta"></p>
+      <h2 class="q-texto" id="s-texto"></h2>
+    </div>
+    <div class="opciones" id="s-opciones"></div>
+    <button class="btn grande primario sim-sig" type="button" id="btn-s-sig" disabled>Siguiente →</button>
+    <p class="pie"><button class="link" type="button" id="btn-s-entregar">Entregar el examen ahora</button></p>
+  </section>
+
+  <section class="pantalla" id="p-simfin" hidden>
+    <div class="fin-hero">
+      <p class="fin-emoji" id="sf-emoji">📝</p>
+      <h1 id="sf-titulo">Simulacro terminado</h1>
+      <p class="fin-puntos"><b id="sf-nota">0</b><span id="sf-sobre"></span></p>
+      <p class="sello" id="sf-sello"></p>
+      <p class="fin-sub" id="sf-sub"></p>
+      <p class="fin-racha" id="sf-comp"></p>
+    </div>
+    <section class="tarjeta">
+      <h2>📊 Resultado por área</h2>
+      <div class="leyenda" aria-hidden="true"><span class="lv alto">≥ 80 %</span><span class="lv medio">60–79 %</span><span class="lv bajo">&lt; 60 %</span></div>
+      <div class="dominio" id="sf-areas"></div>
+      <p class="ayuda" id="sf-nota-pie"></p>
+    </section>
+    <section class="tarjeta" id="sf-err-caja">
+      <h2>📝 Para repasar</h2>
+      <p class="ayuda">Quedaron en «Repasar errores». Las que dejaste en blanco también.</p>
+      <ol class="errores" id="sf-errores"></ol>
+    </section>
+    <div class="fila-btn">
+      <button class="btn grande primario" type="button" id="btn-sf-otro">Otro simulacro</button>
+      <button class="btn grande secundario" type="button" id="btn-sf-inicio">Inicio</button>
+    </div>
   </section>
 
   <!-- Duelo: menú -->

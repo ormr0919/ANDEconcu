@@ -358,7 +358,7 @@ export const ING = [
   ['fp', 2, '¿Cuál de estos es un deber del postulante según la Resolución VCHGO N.º 33/2026?',
     ['Proporcionar información veraz de sus antecedentes, en tiempo y forma', 'Conseguir una recomendación política', 'Presentar el examen ya resuelto', 'Pagar una tasa de evaluación'],
     'Artículo 21, inciso c. También debe conocer la Ley N.º 7445/2025, el reglamento, el perfil y las bases.', 'RES33 art. 21'],
-  ['fp', 2, 'En el concurso CPIEP de la ANDE, ¿qué porcentaje mínimo se necesita para aprobar?',
+  ['fp', 2, 'Según el Acta N.º 04/2026 (CPIEP), ¿qué porcentaje mínimo se necesita para aprobar?',
     ['60 %', '50 %', '70 %', '80 %'],
     'El Acta N.º 04/2026 fija selección por orden de méritos, aprobación al concluir todas las etapas y un mínimo de 60 %.', 'ACTA_CPIEP Acta 04/2026'],
   ['fp', 2, 'Según el Acta N.º 04/2026, ¿cómo se reparten los 30 puntos de la prueba de conocimientos de los cargos profesionales?',

@@ -7,10 +7,11 @@ import { CATEGORIAS, PUESTOS, puestoPorId } from './puestos.js';
 import { CPI_1 } from './preguntas-cpi-1.js';
 import { CPI_2 } from './preguntas-cpi-2.js';
 import { ING } from './preguntas-ing.js';
+import { EXTRA } from './preguntas-extra.js';
 import { citar } from './fuentes.js';
 import { crearRanking } from './ranking.js';
 
-const TIEMPO = 30;        // segundos por pregunta en el modo clásico
+const TIEMPO = 45;        // segundos por pregunta en el modo clásico
 const MAX_PREG = 15;      // preguntas por partida
 const VIDAS = 3;
 const BONO_PLENO = 300;   // por ganar las medallas de todas las categorías
@@ -40,11 +41,11 @@ function hoy() { const d = new Date(); return d.getFullYear() + '-' + String(d.g
 
 /* Nivel de dominio de un área. El 60 % es el mínimo para aprobar. */
 const MIN_RESP = 5;
-function nivel(s) {
+function nivel(s, minimo) {
   if (!s || !s.v) { return { k: 'nuevo', n: 'Sin datos', c: 'var(--lv-nuevo)' }; }
   const p = s.a / s.v;
   // Con pocas respuestas se muestra el color tentativo, más claro.
-  if (s.v < MIN_RESP) { return { k: 'nuevo', n: 'Pocas respuestas', c: p >= 0.8 ? 'var(--lv-alto)' : p >= 0.6 ? 'var(--lv-medio)' : 'var(--lv-bajo)', tentativo: true }; }
+  if (s.v < (minimo == null ? MIN_RESP : minimo)) { return { k: 'nuevo', n: 'Pocas respuestas', c: p >= 0.8 ? 'var(--lv-alto)' : p >= 0.6 ? 'var(--lv-medio)' : 'var(--lv-bajo)', tentativo: true }; }
   if (p >= 0.8) { return { k: 'alto', n: 'Dominado', c: 'var(--lv-alto)' }; }
   if (p >= 0.6) { return { k: 'medio', n: 'En camino', c: 'var(--lv-medio)' }; }
   return { k: 'bajo', n: 'A reforzar', c: 'var(--lv-bajo)' };
@@ -60,8 +61,8 @@ function colorAvatar(n) {
 function pintarAvatar(nodo, nombre) { nodo.textContent = iniciales(nombre); nodo.style.setProperty('--av', colorAvatar(nombre)); }
 
 /* Fila de dominio: icono, nombre del área, barra coloreada por nivel y porcentaje. */
-function filaDominio(k, s) {
-  const c = CATEGORIAS[k], lv = nivel(s), pc = s && s.v ? Math.round(s.a / s.v * 100) : null;
+function filaDominio(k, s, minimo) {
+  const c = CATEGORIAS[k], lv = nivel(s, minimo), pc = s && s.v ? Math.round(s.a / s.v * 100) : null;
   const fila = el('div', 'dom-fila' + (lv.tentativo ? ' tentativo' : ''));
   fila.style.setProperty('--lvc', lv.c);
   const medio = el('div');
@@ -75,7 +76,7 @@ function filaDominio(k, s) {
 }
 
 /* ---------------- Banco de preguntas ---------------- */
-const PREGUNTAS = [].concat(CPI_1, CPI_2, ING).map(function (q) {
+const PREGUNTAS = [].concat(CPI_1, CPI_2, ING, EXTRA).map(function (q) {
   return { id: q[0] + '-' + hash(q[2]), cat: q[0], dif: q[1], texto: q[2], ops: q[3], exp: q[4], fuente: q[5] };
 });
 const POR_CAT = {};
@@ -177,8 +178,13 @@ function colaEntreno(p, n) {
   return cola;
 }
 // Elige una pregunta de la categoría, priorizando las falladas y las no vistas.
-function elegir(cat, usadas) {
-  const pool = (POR_CAT[cat] || []).filter(function (q) { return !usadas.has(q.id); });
+function elegir(cat, usadas, dificil) {
+  let pool = (POR_CAT[cat] || []).filter(function (q) { return !usadas.has(q.id); });
+  // La partida se pone más difícil: desde la 6.ª pregunta, 7 de cada 10 son de dificultad media-alta.
+  if (dificil && Math.random() < 0.7) {
+    const d = pool.filter(function (q) { return q.dif === 3; });
+    if (d.length) { pool = d; }
+  }
   if (!pool.length) { return null; }
   const pesos = pool.map(function (q) {
     const s = prog.preg[q.id];
@@ -287,6 +293,9 @@ function irInicio() {
   $('i-racha').textContent = dias ? '🔥 ' + dias : '';
   $('i-racha').title = dias ? plural(dias, 'día seguido', 'días seguidos') + ' estudiando' : '';
   const top1 = planRefuerzo(p)[0];
+  const cfgSim = configSimulacro(p), simP = (prog.simulacros || {})[p.id];
+  $('i-sim').textContent = Object.keys(cfgSim.n).reduce(function (a, k) { return a + cfgSim.n[k]; }, 0) + ' preguntas · ' + cfgSim.minutos + ' min · nota sobre ' + cfgSim.total
+    + (simP ? ' · tu mejor: ' + String(simP.mejor).replace('.', ',') : '');
   $('i-entreno').textContent = top1 && top1.etiqueta !== 'Bien' && respondidas(p) >= MIN_RESP
     ? '10 preguntas · prioriza ' + CATEGORIAS[top1.k].n
     : '10 preguntas de lo que más te falta';
@@ -424,6 +433,10 @@ function renderPerfil(d, propio) {
   const du = propio ? (prog.duelos || d.duelos) : d.duelos;
   const datos = [[miles(d.partidas || 0), 'partidas con ranking'], [miles(resp), 'respuestas'], [resp ? pct + '%' : '—', 'de aciertos'], ['🔥 ' + mr, 'mejor racha sin errores']];
   if (du && du.jugados) { datos.push(['⚔️ ' + du.ganados + '/' + du.jugados, 'duelos ganados']); }
+  if (propio) {
+    const sp = (prog.simulacros || {})[puestoActual().id];
+    if (sp) { datos.push(['📝 ' + String(sp.mejor).replace('.', ','), 'mejor simulacro (' + puestoActual().corto + ')']); }
+  }
   datos.forEach(function (x) {
     const c = el('div'); c.append(el('b', null, x[0]), el('span', null, x[1])); st.append(c);
   });
@@ -661,7 +674,7 @@ function girar() {
   }, 4100);
 }
 function preguntaDeCategoria(k) {
-  let q = elegir(k, partida.usadas);
+  let q = elegir(k, partida.usadas, partida.n >= 5);
   if (!q) { partida.usadas = new Set(); q = elegir(k, partida.usadas); }
   partida.usadas.add(q.id);
   mostrarPregunta(q);
@@ -869,9 +882,147 @@ async function terminar() {
   mostrar('p-fin');
 }
 
+/* ---------------- Simulacro de examen ---------------- */
+/*
+ * Reproduce el formato de la prueba: sin respuestas hasta el final, con reloj general.
+ *  - Cargos CPI: 30 preguntas = 30 puntos de la prueba técnica, repartidas entre los bloques del temario; 45 minutos.
+ *  - Ingeniero (CPIEP): estadística 10 pts (8 preguntas), Excel 10 pts (8), legislación 5 pts (4); 30 minutos.
+ * Se aprueba con el 60 %, como fijan las actas.
+ */
+function configSimulacro(p) {
+  if (p.id === 'ingeniero') {
+    return { n: { est: 8, xls: 8, fp: 4 }, pts: { est: 10, xls: 10, fp: 5 }, total: 25, minutos: 30,
+      pie: 'Nota sobre 25: estadística (10), planilla electrónica (10) y legislación (5). La parte de guaraní (5) se rinde por escrito y no está incluida.' };
+  }
+  const n = {}, pts = {}, base = Math.floor(30 / p.cats.length);
+  let resto = 30 - base * p.cats.length;
+  mezclar(p.cats).forEach(function (k) { n[k] = base + (resto-- > 0 ? 1 : 0); pts[k] = n[k]; });
+  return { n: n, pts: pts, total: 30, minutos: 45,
+    pie: 'Nota sobre los 30 puntos de la prueba técnica. El guaraní, el test psicométrico y la entrevista se evalúan aparte.' };
+}
+function elegirSim(cat, usadas) {
+  const pool = (POR_CAT[cat] || []).filter(function (q) { return !usadas.has(q.id); });
+  const dificiles = pool.filter(function (q) { return q.dif === 3; });
+  const lista = dificiles.length && Math.random() < 0.65 ? dificiles : pool;
+  return lista[Math.floor(Math.random() * lista.length)] || null;
+}
+let relojSim = null;
+function iniciarSimulacro() {
+  const p = puestoActual(), cfg = configSimulacro(p), usadas = new Set(), cola = [];
+  Object.keys(cfg.n).forEach(function (k) {
+    for (let i = 0; i < cfg.n[k]; i++) { const q = elegirSim(k, usadas); if (q) { usadas.add(q.id); cola.push(q); } }
+  });
+  cerrarPerfil();
+  partida = { modo: 'simulacro', puesto: p, cfg: cfg, cola: mezclar(cola), idx: 0, resp: [], elegida: null, fin: Date.now() + cfg.minutos * 60000, inicio: Date.now(), deltas: {}, terminado: false };
+  clearInterval(relojSim);
+  relojSim = setInterval(tickSim, 1000);
+  mostrarSim();
+}
+function tickSim() {
+  if (!partida || partida.modo !== 'simulacro' || partida.terminado) { clearInterval(relojSim); return; }
+  const rest = Math.max(0, partida.fin - Date.now()), r = $('s-reloj');
+  const mm = Math.floor(rest / 60000), ss = Math.floor(rest % 60000 / 1000);
+  r.textContent = String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0');
+  r.classList.toggle('poco', rest < 5 * 60000);
+  if (rest <= 0) { terminarSimulacro(true); }
+}
+function mostrarSim() {
+  const q = partida.cola[partida.idx], total = partida.cola.length, c = CATEGORIAS[q.cat];
+  partida.elegida = null;
+  $('s-prog').textContent = '📝 Pregunta ' + (partida.idx + 1) + ' de ' + total;
+  $('s-barra').style.width = (partida.idx / total * 100) + '%';
+  $('s-meta').textContent = c.icono + ' ' + c.n;
+  $('s-texto').textContent = q.texto;
+  const caja = $('s-opciones');
+  caja.innerHTML = '';
+  mezclar(q.ops).forEach(function (txt, i) {
+    const b = el('button', 'op');
+    b.type = 'button';
+    b.dataset.txt = txt;
+    b.append(el('span', 'letra', LETRAS[i]), el('span', null, txt));
+    b.addEventListener('click', function () {
+      Array.from(caja.children).forEach(function (x) { x.classList.toggle('elegida', x === b); });
+      partida.elegida = txt;
+      $('btn-s-sig').disabled = false;
+      vibrar(15);
+    });
+    caja.append(b);
+  });
+  $('btn-s-sig').disabled = true;
+  $('btn-s-sig').textContent = partida.idx === total - 1 ? 'Entregar examen ✓' : 'Siguiente →';
+  tickSim();
+  mostrar('p-sim');
+}
+function siguienteSim() {
+  if (!partida || partida.modo !== 'simulacro' || partida.elegida == null) { return; }
+  partida.resp[partida.idx] = partida.elegida;
+  if (partida.idx >= partida.cola.length - 1) { terminarSimulacro(false); return; }
+  partida.idx += 1;
+  mostrarSim();
+}
+function terminarSimulacro(porTiempo) {
+  if (!partida || partida.terminado) { return; }
+  partida.terminado = true;
+  clearInterval(relojSim);
+  const cfg = partida.cfg, p = partida.puesto, porCat = {}, errores = [];
+  partida.cola.forEach(function (q, i) {
+    const r = partida.resp[i], ok = r === q.ops[0];
+    const pc = porCat[q.cat] || (porCat[q.cat] = { v: 0, a: 0 });
+    pc.v += 1; if (ok) { pc.a += 1; }
+    registrarRespuesta(q, ok);
+    const dl = partida.deltas[q.cat] || (partida.deltas[q.cat] = { v: 0, a: 0 });
+    dl.v += 1; if (ok) { dl.a += 1; }
+    if (!ok) { errores.push({ q: q, tu: r == null ? '(en blanco)' : r }); }
+  });
+  let nota = 0;
+  Object.keys(porCat).forEach(function (k) { nota += porCat[k].a * (cfg.pts[k] / cfg.n[k]); });
+  nota = Math.round(nota * 10) / 10;
+  const aprobado = nota >= cfg.total * 0.6;
+  const minimo = Math.round(cfg.total * 0.6 * 10) / 10;
+  const usados = Math.round((Date.now() - partida.inicio) / 60000);
+  const sims = prog.simulacros || (prog.simulacros = {});
+  const hist = sims[p.id] || (sims[p.id] = { mejor: 0, intentos: 0, ultimos: [] });
+  const anterior = hist.mejor;
+  hist.intentos += 1;
+  hist.mejor = Math.max(hist.mejor, nota);
+  hist.ultimos = hist.ultimos.concat([{ f: Date.now(), nota: nota }]).slice(-10);
+  actualizarRacha();
+  guardarProg();
+  ranking.guardarStats(jugador.nombre, partida.deltas, prog.mejorRacha || 0).catch(function (e) { console.error(e); });
+
+  $('sf-emoji').textContent = aprobado ? '🎓' : '📚';
+  $('sf-titulo').textContent = porTiempo ? '⏰ Se terminó el tiempo' : (aprobado ? '¡Aprobarías!' : 'Todavía no alcanza');
+  $('sf-nota').textContent = String(nota).replace('.', ',');
+  $('sf-sobre').textContent = 'de ' + cfg.total + ' puntos · ' + Math.round(nota / cfg.total * 100) + ' %';
+  const sello = $('sf-sello');
+  sello.textContent = aprobado ? 'Aprobado' : 'No aprobado';
+  sello.className = 'sello ' + (aprobado ? 'ok' : 'no');
+  $('sf-sub').textContent = (aprobado ? 'Superaste el mínimo de ' : 'Necesitás al menos ') + String(minimo).replace('.', ',') + ' puntos (60 %). Usaste ' + (usados < 1 ? 'menos de un minuto' : plural(Math.min(usados, cfg.minutos), 'minuto', 'minutos')) + ' de ' + cfg.minutos + '.';
+  $('sf-comp').textContent = hist.intentos === 1 ? 'Primer simulacro de ' + p.corto + '.'
+    : (nota > anterior ? '🎉 ¡Mejoraste tu mejor simulacro (' + String(anterior).replace('.', ',') + ')!' : 'Tu mejor simulacro: ' + String(hist.mejor).replace('.', ',') + ' de ' + cfg.total + '.');
+  const areas = $('sf-areas');
+  areas.innerHTML = '';
+  Object.keys(cfg.n).forEach(function (k) {
+    const s = porCat[k] || { v: 0, a: 0 }, f = filaDominio(k, s, 1);
+    f.querySelector('.nm small').textContent = s.a + ' de ' + s.v + ' correctas';
+    areas.append(f);
+  });
+  $('sf-nota-pie').textContent = cfg.pie;
+  const lista = $('sf-errores');
+  lista.innerHTML = '';
+  errores.forEach(function (x) {
+    const li = el('li');
+    li.append(el('div', 'q', x.q.texto), el('div', 'a', '✔ ' + x.q.ops[0]), el('div', 'tu', '✘ Tu respuesta: ' + x.tu), el('div', 'e', x.q.exp));
+    lista.append(li);
+  });
+  $('sf-err-caja').hidden = !errores.length;
+  if (aprobado) { confeti(150); Sonido.fin(); } else { Sonido.mal(); }
+  mostrar('p-simfin');
+}
+
 /* ---------------- Duelo de estudio (2 a 4 personas) ---------------- */
 const DUELO_PREG = 10;
-const DUELO_TIEMPO = 30;
+const DUELO_TIEMPO = 45;
 let duelo = null;   // { codigo, sala, quitar, idxVisto, reveladoIdx, respondido, reloj, hostTimer, deltas, cerrado }
 
 function abrirDuelo() {
@@ -897,22 +1048,26 @@ function errorDuelo(t) { const e = $('dm-error'); e.textContent = t; e.hidden = 
 async function crearSalaDuelo() {
   const b = $('btn-crear-sala');
   b.disabled = true;
+  b.textContent = 'Creando sala…';
   try {
     const codigo = await ranking.crearSala(jugador.nombre, puestoActual().id, preguntasDuelo(puestoActual()));
     entrarSala(codigo);
   } catch (e) {
     console.error(e); errorDuelo('No se pudo crear la sala. Revisá tu conexión.');
-  } finally { b.disabled = false; }
+  } finally { b.disabled = false; b.textContent = 'Crear sala'; }
 }
 async function unirseSalaDuelo(ev) {
   ev.preventDefault();
   const codigo = $('dm-codigo').value.trim().toUpperCase();
   if (codigo.length !== 4) { errorDuelo('El código tiene 4 caracteres.'); return; }
+  const bu = ev.target.querySelector('button[type=submit]');
+  bu.disabled = true; bu.textContent = 'Entrando…';
   try {
     const r = await ranking.unirseSala(codigo, jugador.nombre);
     if (r.error) { errorDuelo(r.error); return; }
     entrarSala(codigo);
   } catch (e) { console.error(e); errorDuelo('No se pudo entrar a la sala. Revisá el código y tu conexión.'); }
+  finally { bu.disabled = false; bu.textContent = 'Unirme'; }
 }
 function entrarSala(codigo) {
   limpiarDuelo();
@@ -1240,6 +1395,19 @@ function enlazar() {
   $('btn-compartir').addEventListener('click', compartir);
   // Duelo
   $('btn-duelo').addEventListener('click', abrirDuelo);
+  $('btn-sim').addEventListener('click', iniciarSimulacro);
+  $('btn-s-sig').addEventListener('click', siguienteSim);
+  $('btn-s-entregar').addEventListener('click', function () {
+    const sin = partida ? partida.cola.length - partida.resp.filter(function (r) { return r != null; }).length : 0;
+    if (confirm('¿Entregar el examen ahora? ' + (sin ? plural(sin, 'pregunta queda', 'preguntas quedan') + ' en blanco.' : ''))) { terminarSimulacro(false); }
+  });
+  $('btn-sf-otro').addEventListener('click', iniciarSimulacro);
+  $('btn-sf-inicio').addEventListener('click', function () { partida = null; irInicio(); });
+  // Avisa antes de cerrar la pestaña en medio de una partida o un simulacro.
+  window.addEventListener('beforeunload', function (e) {
+    const enJuego = partida && ((partida.modo === 'simulacro' && !partida.terminado) || (partida.modo === 'clasico' && partida.n > 0 && $('p-fin').hidden));
+    if (enJuego) { e.preventDefault(); e.returnValue = ''; }
+  });
   $('btn-crear-sala').addEventListener('click', crearSalaDuelo);
   $('f-unirse').addEventListener('submit', unirseSalaDuelo);
   $('dm-codigo').addEventListener('input', function (e) { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); $('dm-error').hidden = true; });
@@ -1271,6 +1439,10 @@ function enlazar() {
     if (duelo) {
       if (duelo.sala && duelo.sala.estado === 'jugando' && !confirm('¿Salir del duelo?')) { return; }
       salirDuelo(); return;
+    }
+    if (partida && partida.modo === 'simulacro' && !partida.terminado) {
+      if (!confirm('¿Salir del simulacro? Se pierde este intento.')) { return; }
+      partida.terminado = true; clearInterval(relojSim);
     }
     if (partida && (partida.actual || !$('p-ruleta').hidden) && !confirm('¿Salir de la partida? Se pierde el puntaje de esta partida.')) { return; }
     detenerReloj(); partida = null; irInicio();

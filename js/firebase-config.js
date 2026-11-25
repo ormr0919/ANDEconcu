@@ -17,4 +17,11 @@
  * Estos datos no son secretos: Firebase los expone en todas las páginas web.
  * La protección está en las reglas de firestore.rules.
  */
-export const FIREBASE_CONFIG = null;
+export const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyCcL-54UQDaib-pAPDJF5kvtgkw5MzFFUo',
+  authDomain: 'camino-libertad-d9ae1.firebaseapp.com',
+  projectId: 'camino-libertad-d9ae1',
+  storageBucket: 'camino-libertad-d9ae1.firebasestorage.app',
+  messagingSenderId: '1005901973854',
+  appId: '1:1005901973854:web:891de37909ffbf0e22a7cf'
+};

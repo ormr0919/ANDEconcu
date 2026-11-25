@@ -442,3 +442,17 @@ h2 { font-weight: 700; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- Simulacro de examen ---------- */
+.btn.sim-btn { justify-content: flex-start; text-align: left; margin: 0; background: linear-gradient(120deg, #FFFDF8, #FFF0DA); }
+.sim-cab { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 8px; }
+.sim-prog { font-family: var(--f-titulo); font-weight: 700; font-size: 15px; }
+.sim-reloj { font-family: var(--f-titulo); font-weight: 800; font-size: 20px; font-variant-numeric: tabular-nums; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .15); border-radius: 12px; padding: 4px 12px; }
+.sim-reloj.poco { color: var(--bad); border-color: var(--bad); animation: pulso 1s infinite; }
+.sim-barra { height: 8px; border-radius: 999px; background: rgba(255, 255, 255, .12); overflow: hidden; margin-bottom: 4px; }
+.sim-barra i { display: block; height: 100%; width: 0; background: var(--amanecer); border-radius: 999px; transition: width .3s; }
+.btn.sim-sig { margin-top: 16px; }
+.fin-puntos span { display: block; font-size: 16px; color: #CFC6EA; margin-top: 4px; }
+.sello { display: inline-block; font-family: var(--f-titulo); font-weight: 900; font-size: 15px; letter-spacing: .1em; text-transform: uppercase; border: 3px solid currentColor; border-radius: 12px; padding: 6px 14px; margin: 12px 0 4px; transform: rotate(-3deg); }
+.sello.ok { color: var(--electrico); }
+.sello.no { color: var(--sol-3); }
