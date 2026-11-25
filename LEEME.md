@@ -4,7 +4,7 @@ Juego de preguntas tipo ruleta para estudiar. Es una guía de estudio **no ofici
 
 ## Qué incluye
 
-- **335 preguntas** de opción múltiple, de dificultad media y media-alta. Cada una tiene su explicación y la fuente oficial de la que sale.
+- **427 preguntas** de opción múltiple, de dificultad media y media-alta (249 media-alta). Cada una tiene su explicación y la fuente oficial de la que sale.
 - **Puestos:**
   - **Lector Distribuidor II** (CPI-07): 6 bloques.
   - **Operador de Estaciones y Subestaciones IV** (CPI-08): 7 bloques.
@@ -15,7 +15,8 @@ Juego de preguntas tipo ruleta para estudiar. Es una guía de estudio **no ofici
   - Lector rinde ese mismo temario sin el bloque «Sistemas eléctricos de potencia».
   - El Ingeniero Electricista no rinde electricidad: rinde estadística (10 puntos), planilla electrónica (10), legislación (5) y guaraní (5). Su examen es el 05/12/2026 a las 07:00 en la FP-UNA (Acta N.º 04/2026).
 - **Modos de juego:**
-  - Partida con ranking: ruleta, 3 vidas, 15 preguntas, medallas por área y corona cada 3 aciertos seguidos.
+  - Partida con ranking: ruleta, 3 vidas, 15 preguntas de 45 segundos, medallas por área y corona cada 3 aciertos seguidos. Desde la 6.ª pregunta se pone más difícil.
+  - Simulacro de examen: formato real, sin respuestas hasta el final y con reloj general. Para CPI son 30 preguntas en 45 minutos, con nota sobre 30. Para el Ingeniero son 20 preguntas en 30 minutos, con nota sobre 25. Se aprueba con el 60 %.
   - Entrenamiento personalizado.
   - Práctica por tema.
   - Repaso de errores.
@@ -25,24 +26,20 @@ Juego de preguntas tipo ruleta para estudiar. Es una guía de estudio **no ofici
 - **Memoria:** el progreso se guarda solo después de cada respuesta. Con Firebase, además se guarda una copia en la nube.
 - **Pensado para el celular:** se puede instalar como app, funciona sin conexión (salvo el ranking y los duelos), vibra al responder y permite compartir el resultado por WhatsApp.
 
-## Activar el ranking en vivo y los duelos (Firebase, gratis)
+## Firebase (ranking en vivo, perfiles, duelos y copia del progreso)
 
-Sin este paso el juego funciona igual, pero el ranking queda **en cada celular** y el duelo solo funciona entre pestañas del mismo navegador.
+Ya está activo, en el proyecto `camino-libertad-d9ae1`, plan gratuito:
 
-1. Entrá a <https://console.firebase.google.com>, creá un proyecto (por ejemplo `camino-libertad`) y desactivá Google Analytics.
-2. **Firestore:** en *Build → Firestore Database*, tocá *Create database*, elegí la región `southamerica-east1` y el modo *production*.
-3. **Reglas:** en la pestaña *Rules* de Firestore, pegá el contenido de `firestore.rules` y tocá *Publish*.
-4. **Autenticación:** en *Build → Authentication → Get started*, activá el proveedor **Anonymous**.
-5. **App web:** en *Project settings → General → Your apps*, agregá una app web (ícono `</>`) y copiá el objeto `firebaseConfig`.
-6. Pegá ese objeto en `js/firebase-config.js`, en lugar de `null`, y subí el cambio a GitHub.
-7. **Dominio:** en *Authentication → Settings → Authorized domains*, agregá `ormr0919.github.io`.
+- **Firestore:** en São Paulo, con las reglas de `firestore.rules`.
+- **Ingreso anónimo:** activado. Los jugadores no tienen que crear ninguna cuenta.
+- **Dominio autorizado:** `ormr0919.github.io`.
 
-Los datos de `firebaseConfig` no son secretos. La seguridad está en las reglas de `firestore.rules`: cada jugador solo puede escribir su propia fila.
+Consola: <https://console.firebase.google.com/project/camino-libertad-d9ae1>. Si cambiás `firestore.rules`, pegá el archivo nuevo en *Firestore → Reglas* y tocá *Publicar*.
 
 ## Actualizar el juego
 
-- **Preguntas:** están en `js/preguntas-cpi-1.js`, `js/preguntas-cpi-2.js` y `js/preguntas-ing.js`. Formato: `[categoría, dificultad, pregunta, [correcta, incorrecta, incorrecta, incorrecta], explicación, fuente]`.
-- Después de cada cambio, subí el número de `VERSION` en `sw.js` (por ejemplo, `camino-v2`) para que los celulares descarguen la versión nueva.
+- **Preguntas:** están en `js/preguntas-cpi-1.js`, `js/preguntas-cpi-2.js`, `js/preguntas-ing.js` y `js/preguntas-extra.js`. Formato: `[categoría, dificultad, pregunta, [correcta, incorrecta, incorrecta, incorrecta], explicación, fuente]`.
+- Después de cada cambio, subí el número de `VERSION` en `sw.js` (por ejemplo, `camino-v4`) para que los celulares descarguen la versión nueva.
 
 ## Fuentes
 
