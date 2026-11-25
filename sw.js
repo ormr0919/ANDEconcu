@@ -2,11 +2,11 @@
  * Service worker: guarda la app para jugar sin conexión.
  * Cambiá VERSION cada vez que publiques cambios para que los celulares descarguen la versión nueva.
  */
-const VERSION = 'camino-v3b';
+const VERSION = 'camino-v4';
 const ARCHIVOS = [
   './', './index.html', './manifest.webmanifest', './css/juego.css',
   './js/app.js', './js/puestos.js', './js/fuentes.js', './js/ranking.js', './js/firebase-config.js',
-  './js/preguntas-cpi-1.js', './js/preguntas-cpi-2.js', './js/preguntas-ing.js', './js/preguntas-extra.js',
+  './js/preguntas-cpi-1.js', './js/preguntas-cpi-2.js', './js/preguntas-ing.js', './js/preguntas-extra.js', './js/perfil.js',
   './img/icono-192.png', './img/icono-512.png', './img/apple-touch-icon.png'
 ];
 

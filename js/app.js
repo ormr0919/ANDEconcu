@@ -3,13 +3,14 @@
  * Flujo: registro (una sola vez) → inicio → ruleta → pregunta → … → fin de partida.
  * Modos: clásico (con ranking), práctica por tema y repaso de errores.
  */
-import { CATEGORIAS, PUESTOS, puestoPorId } from './puestos.js?v=3b';
-import { CPI_1 } from './preguntas-cpi-1.js?v=3b';
-import { CPI_2 } from './preguntas-cpi-2.js?v=3b';
-import { ING } from './preguntas-ing.js?v=3b';
-import { EXTRA } from './preguntas-extra.js?v=3b';
-import { citar } from './fuentes.js?v=3b';
-import { crearRanking } from './ranking.js?v=3b';
+import { CATEGORIAS, PUESTOS, puestoPorId } from './puestos.js?v=4';
+import { CPI_1 } from './preguntas-cpi-1.js?v=4';
+import { CPI_2 } from './preguntas-cpi-2.js?v=4';
+import { ING } from './preguntas-ing.js?v=4';
+import { EXTRA } from './preguntas-extra.js?v=4';
+import { citar } from './fuentes.js?v=4';
+import { crearRanking, EN_LINEA_SEG } from './ranking.js?v=4';
+import { contexto, nivelDe, xpParaNivel, NIVEL_MAX, AVATARES, COLORES, MARCOS, FRASES, INSIGNIAS, insigniaPorId, avatarDisponible, colorDisponible } from './perfil.js?v=4';
 
 const TIEMPO = 45;        // segundos por pregunta en el modo clásico
 const MAX_PREG = 15;      // preguntas por partida
@@ -36,7 +37,7 @@ function mezclar(a) {
 function miles(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
 function el(tag, cls, txt) { const e = document.createElement(tag); if (cls) { e.className = cls; } if (txt != null) { e.textContent = txt; } return e; }
 function plural(n, uno, varios) { return miles(n) + ' ' + (n === 1 ? uno : varios); }
-function vibrar(p) { try { if (navigator.vibrate && Sonido.on) { navigator.vibrate(p); } } catch (e) { /* sin vibración */ } }
+function vibrar(p) { try { if (navigator.vibrate && LS.get('andeJuego.vibracion', true)) { navigator.vibrate(p); } } catch (e) { /* sin vibración */ } }
 function hoy() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 
 /* Nivel de dominio de un área. El 60 % es el mínimo para aprobar. */
@@ -58,7 +59,28 @@ function colorAvatar(n) {
   const c = ['#2D7FF9', '#1E9E73', '#8E4EC6', '#EE7A12', '#0FA3B8', '#E5484D', '#C98A00'];
   return c[parseInt(hash(String(n || '')), 36) % c.length];
 }
-function pintarAvatar(nodo, nombre) { nodo.textContent = iniciales(nombre); nodo.style.setProperty('--av', colorAvatar(nombre)); }
+// id (opcional): { avatar, color, marco } elegidos en la personalización.
+function pintarAvatar(nodo, nombre, id) {
+  id = id || {};
+  const emoji = id.avatar || '';
+  nodo.textContent = emoji || iniciales(nombre);
+  nodo.classList.toggle('emoji', !!emoji);
+  nodo.style.setProperty('--av', id.color || colorAvatar(nombre));
+  if (id.marco) { nodo.dataset.marco = id.marco; } else { delete nodo.dataset.marco; }
+}
+function perfilCfg() { return prog.perfil || (prog.perfil = {}); }
+function ctxJugador() { return contexto(prog, DIF_POR_ID); }
+// Solo lo que el jugador tiene desbloqueado según su nivel e insignias.
+function identidadPropia(c) {
+  c = c || ctxJugador();
+  const pf = perfilCfg();
+  return {
+    avatar: pf.avatar && avatarDisponible(pf.avatar, c.nivel) ? pf.avatar : null,
+    color: pf.color && colorDisponible(pf.color, c.nivel) ? pf.color : null,
+    marco: pf.marco && MARCOS[pf.marco] && MARCOS[pf.marco].ok(c) ? pf.marco : null,
+    nivel: c.nivel
+  };
+}
 
 /* Fila de dominio: icono, nombre del área, barra coloreada por nivel y porcentaje. */
 function filaDominio(k, s, minimo) {
@@ -81,7 +103,8 @@ const PREGUNTAS = [].concat(CPI_1, CPI_2, ING, EXTRA).map(function (q) {
 });
 const POR_CAT = {};
 const POR_ID = {};
-PREGUNTAS.forEach(function (q) { (POR_CAT[q.cat] = POR_CAT[q.cat] || []).push(q); POR_ID[q.id] = q; });
+const DIF_POR_ID = {};
+PREGUNTAS.forEach(function (q) { (POR_CAT[q.cat] = POR_CAT[q.cat] || []).push(q); POR_ID[q.id] = q; DIF_POR_ID[q.id] = q.dif; });
 
 /* ---------------- Jugador y progreso local ---------------- */
 let jugador = LS.get('andeJuego.jugador', null);   // { nombre, puesto, idp }
@@ -127,6 +150,20 @@ function registrarRespuesta(q, ok) {
   }
   const c = prog.cats[q.cat] || (prog.cats[q.cat] = { v: 0, a: 0 });
   c.v += 1; if (ok) { c.a += 1; }
+  // Meta diaria
+  const h = hoy();
+  if (!prog.hoy || prog.hoy.f !== h) { prog.hoy = { f: h, n: 0, ok: false }; }
+  prog.hoy.n += 1;
+  const meta = perfilCfg().meta || 20;
+  if (!prog.hoy.ok && prog.hoy.n >= meta) {
+    prog.hoy.ok = true;
+    prog.metas = (prog.metas || 0) + 1;
+    setTimeout(function () { aviso('🎯 ¡Cumpliste tu meta de hoy: ' + meta + ' preguntas!'); confeti(80); }, 700);
+  }
+  // Insignia «Sin pendientes»
+  const pendN = Object.keys(prog.preg).filter(function (id) { return prog.preg[id].pend; }).length;
+  prog.maxPend = Math.max(prog.maxPend || 0, pendN);
+  if (prog.maxPend >= 10 && pendN === 0) { prog.repasoLimpio = true; }
   guardarProg();
 }
 function pendientes(p) {
@@ -236,6 +273,7 @@ function confeti(n) {
 function mostrar(id) {
   document.querySelectorAll('.pantalla').forEach(function (s) { s.hidden = s.id !== id; });
   window.scrollTo(0, 0);
+  presenciaPorPantalla();
 }
 
 let ranking = null;
@@ -279,6 +317,8 @@ function iniciarRegistro() {
     cargarProg();
     try { await ranking.registrar(n); } catch (err) { console.error(err); }
     irInicio();
+    iniciarPresencia();
+    publicarPerfil();
   };
   mostrar('p-registro');
   setTimeout(function () { nombre.focus(); }, 100);
@@ -288,7 +328,8 @@ function iniciarRegistro() {
 function irInicio() {
   const p = puestoActual();
   $('i-nombre').textContent = jugador.nombre;
-  pintarAvatar($('i-avatar'), jugador.nombre);
+  pintarAvatar($('i-avatar'), jugador.nombre, identidadPropia());
+  renderCabecera();
   const dias = rachaVigente();
   $('i-racha').textContent = dias ? '🔥 ' + dias : '';
   $('i-racha').title = dias ? plural(dias, 'día seguido', 'días seguidos') + ' estudiando' : '';
@@ -322,10 +363,23 @@ function irInicio() {
   suscribirTop(p);
   $('pie-modo').textContent = ranking.modo === 'firebase'
     ? 'Ranking en línea: se actualiza en tiempo real.'
-    : 'Ranking local de este dispositivo (falta configurar Firebase para el ranking en línea).';
+    : (ranking.prueba ? '🧪 Modo de prueba: no se usa la base de datos real.' : 'Ranking local de este dispositivo (sin conexión con el ranking en línea).');
   mostrar('p-inicio');
 }
 
+function renderCabecera() {
+  const c = ctxJugador(), nv = c.nv;
+  $('i-nivel-n').textContent = nv.nivel;
+  $('i-nivel-t').textContent = nv.titulo;
+  $('i-xp-barra').style.width = Math.round(nv.avance * 100) + '%';
+  $('i-xp-txt').textContent = nv.nivel >= NIVEL_MAX ? 'Nivel máximo' : miles(nv.xp - nv.desde) + ' / ' + miles(nv.hasta - nv.desde) + ' XP';
+  const meta = perfilCfg().meta || 20, n = prog.hoy && prog.hoy.f === hoy() ? prog.hoy.n : 0;
+  const an = $('i-meta-anillo');
+  an.style.setProperty('--p', Math.min(100, Math.round(n / meta * 100)));
+  an.classList.toggle('lista', n >= meta);
+  $('i-meta-n').textContent = n >= meta ? '✓' : n + '/' + meta;
+  $('i-meta-txt').textContent = n >= meta ? '¡meta cumplida!' : 'meta de hoy';
+}
 function renderDominio(p) {
   const caja = $('d-lista');
   caja.innerHTML = '';
@@ -354,9 +408,12 @@ function filaTop(f, i, miId, orden) {
   li.title = 'Ver el perfil de ' + f.nombre;
   li.addEventListener('click', function () { const d = li.closest('dialog'); if (d) { d.close(); } abrirPerfil(f.id, f.nombre); });
   li.addEventListener('keydown', function (e) { if (e.key === 'Enter') { li.click(); } });
-  const nom = el('span', 'nom', f.nombre);
+  const nom = el('span', 'nom'), av = el('span', 'avatar mini'), txt = el('span', 'txt');
+  pintarAvatar(av, f.nombre, f);
   const pct = f.preguntas ? Math.round(f.aciertos / f.preguntas * 100) : 0;
-  nom.append(el('small', null, plural(f.partidas, 'partida', 'partidas') + ' · ' + pct + ' % de aciertos'));
+  if (esFavorito(f.id)) { txt.append(el('span', 'fav', '★')); }
+  txt.append(document.createTextNode(f.nombre), el('small', null, (f.nivel ? 'Nv ' + f.nivel + ' · ' : '') + plural(f.partidas, 'partida', 'partidas') + ' · ' + pct + ' % de aciertos'));
+  nom.append(av, txt);
   const valor = orden === 'racha' ? '🔥 ' + (f.racha || 0) : miles(f.mejor);
   li.append(el('span', 'pos', i < 3 ? ['🥇', '🥈', '🥉'][i] : String(i + 1)), nom, el('span', 'pts', valor));
   return li;
@@ -394,17 +451,17 @@ function abrirPerfil(id, nombreAux) {
   if (quitarTop) { quitarTop(); quitarTop = null; }
   pintarPerfilBase(nombreAux || '', propio);
   if (propio) {
-    // El perfil propio usa los datos locales (incluye todo lo practicado) y agrega el plan privado.
+    // El perfil propio usa los datos locales (incluye todo lo practicado) y agrega lo privado.
     renderPerfil({
       nombre: jugador.nombre,
       partidas: Object.keys(prog.puestos).reduce(function (n, k) { return n + prog.puestos[k].partidas; }, 0),
       cats: prog.cats, puestos: prog.puestos, creado: prog.creado || null
-    }, true);
+    }, true, id);
   } else {
     $('pf-sub').textContent = 'Cargando…';
     quitarPerfil = ranking.escucharPerfil(id, function (d) {
       if (!d) { $('pf-sub').textContent = 'No se encontró el perfil.'; return; }
-      renderPerfil(d, false);
+      renderPerfil(d, false, id);
     });
   }
   mostrar('p-perfil');
@@ -412,40 +469,117 @@ function abrirPerfil(id, nombreAux) {
 function pintarPerfilBase(nombre, propio) {
   $('pf-nombre').textContent = nombre;
   pintarAvatar($('pf-avatar'), nombre);
-  $('pf-stats').innerHTML = '';
-  $('pf-puestos').innerHTML = '';
-  $('pf-areas').innerHTML = '';
+  ['pf-stats', 'pf-puestos', 'pf-areas', 'pf-nivel', 'pf-postula', 'pf-acciones', 'pf-vitrina', 'pf-insignias'].forEach(function (x) { $(x).innerHTML = ''; });
+  $('pf-frase').hidden = true;
   $('pf-privado').hidden = !propio;
+  $('pf-sim-caja').hidden = true;
 }
-function renderPerfil(d, propio) {
+function barraNivel(nv) {
+  const caja = el('div', 'pf-nivel-in');
+  const txt = el('span', 'nv-txt');
+  const xp = el('span', 'xp'), barra = el('i');
+  barra.style.width = Math.round(nv.avance * 100) + '%';
+  xp.append(barra);
+  txt.append(el('b', null, nv.titulo), xp, el('small', null, nv.nivel >= NIVEL_MAX ? miles(nv.xp) + ' XP · nivel máximo' : miles(nv.xp) + ' / ' + miles(nv.hasta) + ' XP para el nivel ' + (nv.nivel + 1)));
+  return [el('span', 'nv', String(nv.nivel)), txt];
+}
+function tarjetaInsignia(x, ganada) {
+  const b = el('div', 'ins' + (ganada ? '' : ' bloq'));
+  b.title = x.d;
+  b.append(el('span', 'ii', ganada ? x.i : '🔒'), document.createTextNode(x.n), el('small', null, ganada ? '' : x.d));
+  return b;
+}
+function esFavorito(id) { return (perfilCfg().favoritos || []).indexOf(id) !== -1; }
+function alternarFavorito(id) {
+  const pf = perfilCfg();
+  pf.favoritos = pf.favoritos || [];
+  const i = pf.favoritos.indexOf(id);
+  if (i === -1) { pf.favoritos.unshift(id); pf.favoritos = pf.favoritos.slice(0, 50); aviso('★ Agregado a tus compañeros de estudio'); }
+  else { pf.favoritos.splice(i, 1); aviso('Quitado de tus compañeros de estudio'); }
+  guardarProg();
+  renderEnLinea();
+}
+function renderPerfil(d, propio, idJug) {
+  const c = propio ? ctxJugador() : null, pf = propio ? perfilCfg() : null;
+  const ident = propio ? identidadPropia(c) : { avatar: d.avatar, color: d.color, marco: d.marco };
   $('pf-nombre').textContent = d.nombre;
-  pintarAvatar($('pf-avatar'), d.nombre);
+  pintarAvatar($('pf-avatar'), d.nombre, ident);
+  const fraseIdx = propio ? pf.frase : d.frase;
+  const fr = $('pf-frase');
+  fr.hidden = !(fraseIdx != null && fraseIdx >= 0 && FRASES[fraseIdx]);
+  fr.textContent = fr.hidden ? '' : '«' + FRASES[fraseIdx] + '»';
+
   const cats = d.cats || {};
   const resp = Object.keys(cats).reduce(function (n, k) { return n + (cats[k].v || 0); }, 0);
   const ac = Object.keys(cats).reduce(function (n, k) { return n + (cats[k].a || 0); }, 0);
   const pct = resp ? Math.round(ac / resp * 100) : 0;
   const lvGlobal = nivel({ v: resp, a: ac });
-  $('pf-sub').textContent = (propio ? 'Tu perfil · ' : '') + (resp ? lvGlobal.n + ' en general' : 'Todavía sin respuestas');
+  $('pf-sub').textContent = (propio ? 'Tu perfil · ' : '') + (d.privado && !propio ? 'Perfil privado' : (resp ? lvGlobal.n + ' en general' : 'Todavía sin respuestas'));
 
+  // Nivel y experiencia
+  const nv = propio ? c.nv : nivelDe(d.xp || 0);
+  const pn = $('pf-nivel');
+  pn.innerHTML = '';
+  barraNivel(nv).forEach(function (x) { pn.append(x); });
+
+  // Puestos a los que postula
+  const post = $('pf-postula');
+  post.innerHTML = '';
+  ((propio ? pf.postula : d.postula) || []).forEach(function (pid) {
+    const p = puestoPorId(pid);
+    if (p) { post.append(el('span', null, p.icono + ' ' + p.corto)); }
+  });
+
+  // Acciones
+  const acc = $('pf-acciones');
+  acc.innerHTML = '';
+  if (propio) {
+    const b1 = el('button', 'btn primario', '✏️ Personalizar'); b1.type = 'button'; b1.addEventListener('click', abrirEditor);
+    const b2 = el('button', 'btn secundario', '📲 Compartir mi tarjeta'); b2.type = 'button'; b2.addEventListener('click', compartirTarjeta);
+    acc.append(b1, b2);
+  } else if (idJug) {
+    const fav = el('button', 'btn secundario', esFavorito(idJug) ? '★ Compañero de estudio' : '☆ Agregar a compañeros'); fav.type = 'button';
+    fav.addEventListener('click', function () { alternarFavorito(idJug); fav.textContent = esFavorito(idJug) ? '★ Compañero de estudio' : '☆ Agregar a compañeros'; });
+    acc.append(fav);
+    const enl = enLinea.find(function (j) { return j.id === idJug && Date.now() - j.ultimo < EN_LINEA_SEG * 1000; });
+    if (enl && !enl.ocupado && enl.desafios !== false && idJug !== ranking.miIdSala()) {
+      const bd = el('button', 'btn primario', '⚔️ Desafiar'); bd.type = 'button';
+      bd.addEventListener('click', function () { desafiar(enl, bd); });
+      acc.append(bd);
+    }
+  }
+
+  // Estadísticas
   const st = $('pf-stats');
   st.innerHTML = '';
   const mr = propio ? Math.max(prog.mejorRacha || 0, d.mejorRacha || 0) : (d.mejorRacha || 0);
   const du = propio ? (prog.duelos || d.duelos) : d.duelos;
-  const datos = [[miles(d.partidas || 0), 'partidas con ranking'], [miles(resp), 'respuestas'], [resp ? pct + '%' : '—', 'de aciertos'], ['🔥 ' + mr, 'mejor racha sin errores']];
+  const datos = [[miles(d.partidas || 0), 'partidas con ranking']];
+  if (!d.privado || propio) { datos.push([miles(resp), 'respuestas'], [resp ? pct + '%' : '—', 'de aciertos']); }
+  datos.push(['🔥 ' + mr, 'mejor racha sin errores']);
   if (du && du.jugados) { datos.push(['⚔️ ' + du.ganados + '/' + du.jugados, 'duelos ganados']); }
   if (propio) {
     const sp = (prog.simulacros || {})[puestoActual().id];
     if (sp) { datos.push(['📝 ' + String(sp.mejor).replace('.', ','), 'mejor simulacro (' + puestoActual().corto + ')']); }
+    datos.push(['📅 ' + rachaVigente(), 'días seguidos estudiando']);
   }
-  datos.forEach(function (x) {
-    const c = el('div'); c.append(el('b', null, x[0]), el('span', null, x[1])); st.append(c);
-  });
-  if (propio) {
-    const c = el('div'); c.append(el('b', null, '📅 ' + rachaVigente()), el('span', null, 'días seguidos estudiando'));
-    st.append(c);
-  }
-  st.style.gridTemplateColumns = '';
+  datos.forEach(function (x) { const b = el('div'); b.append(el('b', null, x[0]), el('span', null, x[1])); st.append(b); });
 
+  // Insignias y vitrina
+  const ganadas = propio ? c.ins : (d.insignias || []);
+  const vit = $('pf-vitrina'), grid = $('pf-insignias');
+  vit.innerHTML = ''; grid.innerHTML = '';
+  ((propio ? pf.vitrina : d.vitrina) || []).filter(function (id) { return ganadas.indexOf(id) !== -1; }).slice(0, 3).forEach(function (id) {
+    const x = insigniaPorId(id); if (x) { vit.append(tarjetaInsignia(x, true)); }
+  });
+  $('pf-ins-cuenta').textContent = '(' + ganadas.length + ' de ' + INSIGNIAS.length + ')';
+  INSIGNIAS.forEach(function (x) {
+    const g = ganadas.indexOf(x.id) !== -1;
+    if (g || propio) { grid.append(tarjetaInsignia(x, g)); }
+  });
+  if (!ganadas.length && !propio) { grid.append(el('p', 'ayuda', 'Todavía no ganó insignias.')); }
+
+  // Récords por puesto
   const ps = $('pf-puestos');
   ps.innerHTML = '';
   const jugados = PUESTOS.filter(function (p) { return d.puestos && d.puestos[p.id]; });
@@ -457,17 +591,261 @@ function renderPerfil(d, propio) {
     ps.append(f);
   });
 
-  // Áreas: en el perfil propio, las del puesto actual; en el ajeno, todas las que respondió.
+  // Áreas: en el perfil propio, las del puesto actual; en el ajeno, todas las que respondió (si no es privado).
   const areas = $('pf-areas');
   areas.innerHTML = '';
-  const lista = propio
-    ? puestoActual().cats.concat(Object.keys(cats).filter(function (k) { return puestoActual().cats.indexOf(k) === -1; }))
-    : Object.keys(CATEGORIAS).filter(function (k) { return cats[k] && cats[k].v; });
-  if (!lista.length) { areas.append(el('p', 'ayuda', 'Todavía no respondió preguntas.')); }
-  lista.forEach(function (k) { areas.append(filaDominio(k, cats[k])); });
+  if (!propio && d.privado) {
+    areas.append(el('p', 'ayuda', '🔒 Perfil privado: sus estadísticas por área no se muestran.'));
+  } else {
+    const lista = propio
+      ? puestoActual().cats.concat(Object.keys(cats).filter(function (k) { return puestoActual().cats.indexOf(k) === -1; }))
+      : Object.keys(CATEGORIAS).filter(function (k) { return cats[k] && cats[k].v; });
+    if (!lista.length) { areas.append(el('p', 'ayuda', 'Todavía no respondió preguntas.')); }
+    lista.forEach(function (k) { areas.append(filaDominio(k, cats[k])); });
+  }
 
-  if (propio) { renderPlan(); renderMemoria(); }
+  if (propio) { renderPlan(); renderMemoria(); renderSimGraf(); }
   $('pf-memoria').hidden = !propio;
+}
+
+/* ----- Gráfico de los últimos simulacros (privado) ----- */
+function renderSimGraf() {
+  const p = puestoActual(), h = (prog.simulacros || {})[p.id], caja = $('pf-sim-caja');
+  if (!h || !h.ultimos || !h.ultimos.length) { caja.hidden = true; return; }
+  caja.hidden = false;
+  const total = p.id === 'ingeniero' ? 25 : 30, pts = h.ultimos.slice(-10);
+  const W = 320, H = 150, ml = 26, mr = 10, mt = 12, mb = 22;
+  const x = function (i) { return ml + (pts.length === 1 ? (W - ml - mr) / 2 : i * (W - ml - mr) / (pts.length - 1)); };
+  const y = function (v) { return mt + (1 - v / total) * (H - mt - mb); };
+  const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Notas de los últimos simulacros de ' + p.corto);
+  function nodo(tag, at, txt) { const e = document.createElementNS(ns, tag); Object.keys(at).forEach(function (k) { e.setAttribute(k, at[k]); }); if (txt != null) { e.textContent = txt; } svg.append(e); return e; }
+  [0, total * 0.6, total].forEach(function (v) {
+    nodo('line', { x1: ml, x2: W - mr, y1: y(v), y2: y(v), stroke: v === total * 0.6 ? '#24B47E' : '#E9DCCB', 'stroke-dasharray': v === total * 0.6 ? '5 4' : '0', 'stroke-width': v === total * 0.6 ? 2 : 1 });
+    nodo('text', { x: ml - 5, y: y(v) + 4, 'text-anchor': 'end', 'font-size': 10, fill: '#776E92' }, String(Math.round(v)));
+  });
+  nodo('polyline', { points: pts.map(function (q, i) { return x(i) + ',' + y(q.nota); }).join(' '), fill: 'none', stroke: '#FF9F43', 'stroke-width': 3, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+  pts.forEach(function (q, i) {
+    nodo('circle', { cx: x(i), cy: y(q.nota), r: 5, fill: q.nota >= total * 0.6 ? '#24B47E' : '#EF4D5E', stroke: '#fff', 'stroke-width': 2 });
+  });
+  nodo('text', { x: W - mr, y: y(total * 0.6) - 5, 'text-anchor': 'end', 'font-size': 10, fill: '#24B47E', 'font-weight': 700 }, 'aprobado (60 %)');
+  const g = $('pf-sim-graf'); g.innerHTML = ''; g.append(svg);
+  const ult = pts[pts.length - 1].nota, prim = pts[0].nota;
+  $('pf-sim-pie').textContent = 'Últimos ' + plural(pts.length, 'simulacro', 'simulacros') + ' de ' + p.corto + '. Último: ' + String(ult).replace('.', ',') + ' de ' + total
+    + (pts.length > 1 ? (ult > prim ? ' · 📈 vas mejorando' : (ult < prim ? ' · repasá tus áreas en rojo' : '')) : '') + '.';
+}
+
+/* ----- Editor «Personalizar» ----- */
+let ed = null;
+const PREFS = [
+  ['enLinea', '🟢 Aparecer en línea', 'Los demás te ven en «En línea ahora».'],
+  ['desafios', '⚔️ Recibir desafíos', 'Si lo apagás, nadie puede invitarte a un duelo.'],
+  ['publico', '👁️ Mostrar mis estadísticas por área', 'Si lo apagás, tu perfil queda privado: solo se ve tu nivel, récords e insignias.'],
+  ['sonido', '🔊 Sonidos', ''],
+  ['vibracion', '📳 Vibración', ''],
+  ['letra', '🔠 Letra grande', 'Más cómodo para leer en el celular.']
+];
+function abrirEditor() {
+  const pf = perfilCfg(), c = ctxJugador();
+  ed = {
+    c: c, nombre: jugador.nombre, avatar: pf.avatar || null, color: pf.color || null, marco: pf.marco || null,
+    frase: pf.frase == null ? -1 : pf.frase, vitrina: (pf.vitrina || []).slice(), postula: (pf.postula || [jugador.puesto]).slice(),
+    prefs: { enLinea: !pf.ocultarEnLinea, desafios: !pf.noDesafios, publico: !pf.privado, sonido: Sonido.on, vibracion: LS.get('andeJuego.vibracion', true), letra: LS.get('andeJuego.letraGrande', false) },
+    meta: pf.meta || 20
+  };
+  $('ed-nombre').value = ed.nombre;
+  $('ed-meta').value = String(ed.meta);
+  $('ed-error').hidden = true;
+  renderEditor();
+  mostrar('p-editar');
+}
+function opcion(cls, presionado, alElegir) {
+  const b = el('button', cls); b.type = 'button';
+  b.setAttribute('aria-pressed', String(!!presionado));
+  b.addEventListener('click', alElegir);
+  return b;
+}
+function renderEditor() {
+  const c = ed.c;
+  // Vista previa
+  pintarAvatar($('ed-avatar'), ed.nombre, { avatar: ed.avatar, color: ed.color, marco: ed.marco });
+  $('ed-nombre-vista').textContent = ed.nombre || '—';
+  $('ed-nivel-vista').textContent = 'Nivel ' + c.nivel + ' · ' + c.nv.titulo;
+  $('ed-frase-vista').textContent = ed.frase >= 0 ? '«' + FRASES[ed.frase] + '»' : '';
+  // Avatares
+  const av = $('ed-avatares'); av.innerHTML = '';
+  const ini = opcion('ed-op', !ed.avatar, function () { ed.avatar = null; renderEditor(); });
+  ini.textContent = iniciales(ed.nombre); ini.style.fontFamily = 'var(--f-titulo)'; ini.style.fontSize = '17px'; ini.title = 'Iniciales';
+  av.append(ini);
+  AVATARES.forEach(function (a) {
+    const ok = c.nivel >= a[1];
+    const b = opcion('ed-op', ed.avatar === a[0], function () { ed.avatar = a[0]; renderEditor(); });
+    b.textContent = a[0]; b.disabled = !ok;
+    if (!ok) { b.append(el('span', 'req', 'Nv ' + a[1])); b.title = 'Se desbloquea en el nivel ' + a[1]; }
+    av.append(b);
+  });
+  // Colores
+  const co = $('ed-colores'); co.innerHTML = '';
+  const auto = opcion('ed-chip', !ed.color, function () { ed.color = null; renderEditor(); });
+  auto.textContent = 'Automático'; co.append(auto);
+  COLORES.forEach(function (x) {
+    const b = opcion('ed-color', ed.color === x[0], function () { ed.color = x[0]; renderEditor(); });
+    b.style.setProperty('--c', x[0]); b.title = x[1] + (c.nivel >= x[2] ? '' : ' · se desbloquea en el nivel ' + x[2]);
+    b.setAttribute('aria-label', b.title); b.disabled = c.nivel < x[2];
+    co.append(b);
+  });
+  // Marcos
+  const ma = $('ed-marcos'); ma.innerHTML = '';
+  const sin = opcion('ed-chip', !ed.marco, function () { ed.marco = null; renderEditor(); });
+  sin.textContent = 'Sin marco'; ma.append(sin);
+  Object.keys(MARCOS).forEach(function (k) {
+    const m = MARCOS[k], ok = m.ok(c);
+    const b = opcion('ed-chip', ed.marco === k, function () { ed.marco = k; renderEditor(); });
+    b.append(document.createTextNode((ok ? '' : '🔒 ') + m.n), el('small', null, ok ? 'Desbloqueado' : m.req));
+    b.disabled = !ok; ma.append(b);
+  });
+  // Frases
+  const fr = $('ed-frases'); fr.innerHTML = '';
+  const nf = opcion('ed-chip', ed.frase < 0, function () { ed.frase = -1; renderEditor(); });
+  nf.textContent = 'Sin frase'; fr.append(nf);
+  FRASES.forEach(function (t, i) {
+    const b = opcion('ed-chip', ed.frase === i, function () { ed.frase = i; renderEditor(); });
+    b.textContent = t; fr.append(b);
+  });
+  // Vitrina
+  const vi = $('ed-vitrina'); vi.innerHTML = '';
+  if (!c.ins.length) { vi.append(el('p', 'ayuda', 'Todavía no ganaste insignias. ¡Jugá una partida para ganar la primera!')); }
+  c.ins.forEach(function (id) {
+    const x = insigniaPorId(id), sel = ed.vitrina.indexOf(id) !== -1;
+    const b = tarjetaInsignia(x, true);
+    b.setAttribute('role', 'button'); b.tabIndex = 0;
+    b.setAttribute('aria-pressed', String(sel));
+    b.addEventListener('click', function () {
+      const k = ed.vitrina.indexOf(id);
+      if (k !== -1) { ed.vitrina.splice(k, 1); } else if (ed.vitrina.length < 3) { ed.vitrina.push(id); } else { aviso('Máximo 3 insignias en la vitrina'); }
+      renderEditor();
+    });
+    vi.append(b);
+  });
+  // Puestos a los que postula
+  const po = $('ed-postula'); po.innerHTML = '';
+  PUESTOS.forEach(function (p) {
+    const sel = ed.postula.indexOf(p.id) !== -1;
+    const b = opcion('puesto-op', sel, function () {
+      const k = ed.postula.indexOf(p.id);
+      if (k !== -1) { ed.postula.splice(k, 1); } else { ed.postula.push(p.id); }
+      renderEditor();
+    });
+    b.append(el('span', 'pi', p.icono), document.createTextNode(p.corto), el('small', null, p.tipo));
+    po.append(b);
+  });
+  // Preferencias
+  const pr = $('ed-prefs'); pr.innerHTML = '';
+  PREFS.forEach(function (x) {
+    const b = el('button', 'toggle'); b.type = 'button';
+    b.setAttribute('role', 'switch'); b.setAttribute('aria-checked', String(!!ed.prefs[x[0]]));
+    const t = el('span', null, x[1]); if (x[2]) { t.append(el('small', null, x[2])); }
+    b.append(t, el('span', 'sw'));
+    b.addEventListener('click', function () { ed.prefs[x[0]] = !ed.prefs[x[0]]; renderEditor(); });
+    pr.append(b);
+  });
+}
+async function guardarEditor() {
+  const n = $('ed-nombre').value.trim().replace(/\s+/g, ' ').slice(0, 24);
+  if (n.length < 2) { $('ed-error').textContent = 'El nombre tiene que tener al menos 2 letras.'; $('ed-error').hidden = false; return; }
+  const pf = perfilCfg();
+  const antes = JSON.stringify([jugador.nombre, identidadPropia()]);
+  pf.avatar = ed.avatar; pf.color = ed.color; pf.marco = ed.marco; pf.frase = ed.frase;
+  pf.vitrina = ed.vitrina.slice(0, 3); pf.postula = ed.postula.slice(0, 4);
+  pf.ocultarEnLinea = !ed.prefs.enLinea; pf.noDesafios = !ed.prefs.desafios; pf.privado = !ed.prefs.publico;
+  pf.meta = parseInt($('ed-meta').value, 10) || 20;
+  Sonido.on = !!ed.prefs.sonido; LS.set('andeJuego.sonido', Sonido.on);
+  LS.set('andeJuego.vibracion', !!ed.prefs.vibracion);
+  LS.set('andeJuego.letraGrande', !!ed.prefs.letra);
+  aplicarPreferencias();
+  jugador.nombre = n;
+  guardarJugador();
+  guardarProg();
+  const despues = JSON.stringify([jugador.nombre, identidadPropia()]);
+  if (antes !== despues) {
+    ranking.actualizarIdentidad(n, identidadPropia(), Object.keys(prog.puestos || {})).catch(function (e) { console.warn(e); });
+  }
+  publicarPerfil();
+  latido();
+  aviso('✅ Perfil guardado');
+  abrirPerfil(ranking.miId(), jugador.nombre);
+}
+function aplicarPreferencias() {
+  document.documentElement.classList.toggle('letra-grande', !!LS.get('andeJuego.letraGrande', false));
+  const bs = $('btn-sonido');
+  if (bs) { bs.textContent = Sonido.on ? '🔊' : '🔇'; }
+}
+
+/* ----- Tarjeta para compartir (imagen) ----- */
+async function compartirTarjeta() {
+  try { await document.fonts.ready; } catch (e) { /* sin fuentes */ }
+  const c = ctxJugador(), id = identidadPropia(c), pf = perfilCfg();
+  const W = 1080, H = 1350, cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const x = cv.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0B0E2A'); g.addColorStop(0.6, '#17123F'); g.addColorStop(1, '#2C1A4F');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  const sol = x.createRadialGradient(W / 2, H + 120, 50, W / 2, H + 120, 760);
+  sol.addColorStop(0, 'rgba(255,159,67,.75)'); sol.addColorStop(1, 'rgba(255,159,67,0)');
+  x.fillStyle = sol; x.fillRect(0, 0, W, H);
+  x.textAlign = 'center';
+  x.fillStyle = '#FFD166'; x.font = '800 44px Unbounded, sans-serif';
+  x.fillText('Camino a la libertad', W / 2, 110);
+  // Avatar
+  x.beginPath(); x.arc(W / 2, 330, 150, 0, Math.PI * 2);
+  x.fillStyle = id.color || colorAvatar(jugador.nombre); x.fill();
+  x.lineWidth = 14; x.strokeStyle = id.marco ? ({ bronce: '#CD7F32', plata: '#C9D3DD', oro: '#FFD166', rayo: '#3BE8C4', sol: '#FF9F43' }[id.marco]) : '#FFF8EF'; x.stroke();
+  x.fillStyle = '#fff';
+  x.font = id.avatar ? '150px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif' : '900 120px Unbounded, sans-serif';
+  x.textBaseline = 'middle'; x.fillText(id.avatar || iniciales(jugador.nombre), W / 2, 340); x.textBaseline = 'alphabetic';
+  x.fillStyle = '#FFF8EF'; x.font = '900 72px Unbounded, sans-serif';
+  x.fillText(jugador.nombre, W / 2, 580);
+  if (pf.frase != null && pf.frase >= 0) { x.fillStyle = '#FFD166'; x.font = 'italic 600 40px "Bricolage Grotesque", sans-serif'; x.fillText('«' + FRASES[pf.frase] + '»', W / 2, 645); }
+  x.fillStyle = '#3BE8C4'; x.font = '800 46px Unbounded, sans-serif';
+  x.fillText('Nivel ' + c.nivel + ' · ' + c.nv.titulo, W / 2, 730);
+  // Vitrina
+  const vit = (pf.vitrina || []).filter(function (v) { return c.ins.indexOf(v) !== -1; }).slice(0, 3).map(insigniaPorId);
+  const mostrar3 = vit.length ? vit : c.ins.slice(-3).map(insigniaPorId);
+  mostrar3.forEach(function (b, i) {
+    const cx = W / 2 + (i - (mostrar3.length - 1) / 2) * 300;
+    x.fillStyle = 'rgba(255,255,255,.08)'; x.beginPath(); x.roundRect ? x.roundRect(cx - 130, 790, 260, 220, 30) : x.rect(cx - 130, 790, 260, 220); x.fill();
+    x.fillStyle = '#fff'; x.font = '90px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'; x.fillText(b.i, cx, 900);
+    x.fillStyle = '#FFF8EF'; x.font = '700 30px "Bricolage Grotesque", sans-serif'; x.fillText(b.n, cx, 975);
+  });
+  // Datos
+  const sp = (prog.simulacros || {})[puestoActual().id];
+  const datos = [
+    ['🔥 ' + (prog.mejorRacha || 0), 'mejor racha'],
+    ['📝 ' + (sp ? String(sp.mejor).replace('.', ',') : '—'), 'mejor simulacro'],
+    ['🏅 ' + c.ins.length, 'insignias']
+  ];
+  datos.forEach(function (d, i) {
+    const cx = W / 2 + (i - 1) * 320;
+    x.fillStyle = '#FFD166'; x.font = '800 54px Unbounded, sans-serif'; x.fillText(d[0], cx, 1120);
+    x.fillStyle = '#CFC6EA'; x.font = '600 30px "Bricolage Grotesque", sans-serif'; x.fillText(d[1], cx, 1165);
+  });
+  x.fillStyle = '#FFF8EF'; x.font = '600 32px "Bricolage Grotesque", sans-serif';
+  x.fillText('¿Me superás? ' + location.host + location.pathname, W / 2, 1270);
+  const blob = await new Promise(function (r) { cv.toBlob(r, 'image/png'); });
+  const archivo = new File([blob], 'camino-a-la-libertad.png', { type: 'image/png' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      await navigator.share({ files: [archivo], title: 'Camino a la libertad', text: 'Mi perfil en «Camino a la libertad»: nivel ' + c.nivel + '. ¿Me superás? ' + location.href.split('#')[0] });
+      return;
+    }
+  } catch (e) { if (e && e.name === 'AbortError') { return; } }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'camino-a-la-libertad.png';
+  document.body.append(a); a.click(); a.remove();
+  aviso('📥 Tarjeta descargada: compartila por WhatsApp');
 }
 function renderMemoria() {
   $('pm-texto').textContent = ranking.modo === 'firebase'
@@ -499,6 +877,7 @@ function abrirModalPuesto() {
     jugador.puesto = id; guardarJugador();
     d.close();
     irInicio();
+    latido();
   });
   d.showModal();
 }
@@ -774,7 +1153,7 @@ function responder(boton) {
         extra = ' 🏅 Ganaste la medalla de ' + CATEGORIAS[q.cat].n + '.';
         setTimeout(function () { Sonido.medalla(); }, 250);
         if (partida.medallas.size === partida.cats.length && !partida.pleno) {
-          partida.pleno = true; partida.puntos += BONO_PLENO;
+          partida.pleno = true; partida.puntos += BONO_PLENO; prog.plenos = (prog.plenos || 0) + 1;
           extra += ' ¡PLENO! Todas las medallas: +' + BONO_PLENO + '.';
           confeti(160);
         }
@@ -845,7 +1224,7 @@ async function terminar() {
     Sonido.fin();
     try {
       partida.compartir = '☀️ Hice ' + miles(partida.puntos) + ' puntos en «Camino a la libertad» (' + p.corto + '): ' + partida.aciertos + ' de ' + partida.n + ' correctas. ¿Me superás?';
-      const r = await ranking.guardarPartida(jugador.nombre, p.id, { puntos: partida.puntos, aciertos: partida.aciertos, preguntas: partida.n, deltas: partida.deltas, racha: partida.maxRacha, mejorRacha: prog.mejorRacha });
+      const r = await ranking.guardarPartida(jugador.nombre, p.id, { puntos: partida.puntos, aciertos: partida.aciertos, preguntas: partida.n, deltas: partida.deltas, racha: partida.maxRacha, mejorRacha: prog.mejorRacha, identidad: identidadPropia(), privado: !!perfilCfg().privado });
       const records = [];
       if ((r && r.record) || recordLocal) { records.push('🎉 ¡Nuevo récord de puntaje!'); }
       if (partida.maxRacha > rachaAnterior && partida.maxRacha >= 3) { records.push('🔥 ¡Nueva mejor racha sin errores: ' + partida.maxRacha + '!'); }
@@ -866,9 +1245,10 @@ async function terminar() {
     $('f-sub').textContent = pct + ' % de aciertos · suma a tu perfil, no al ranking';
     $('f-medallas').hidden = true;
     if (pct >= 80) { confeti(100); }
-    ranking.guardarStats(jugador.nombre, partida.deltas, prog.mejorRacha).catch(function (e) { console.error(e); });
+    ranking.guardarStats(jugador.nombre, partida.deltas, prog.mejorRacha, { privado: !!perfilCfg().privado }).catch(function (e) { console.error(e); });
   }
   $('btn-compartir').hidden = !partida.compartir;
+  revisarLogros();
 
   const lista = $('f-errores');
   lista.innerHTML = '';
@@ -985,10 +1365,11 @@ function terminarSimulacro(porTiempo) {
   const anterior = hist.mejor;
   hist.intentos += 1;
   hist.mejor = Math.max(hist.mejor, nota);
+  if (aprobado) { hist.aprobados = (hist.aprobados || 0) + 1; }
   hist.ultimos = hist.ultimos.concat([{ f: Date.now(), nota: nota }]).slice(-10);
   actualizarRacha();
   guardarProg();
-  ranking.guardarStats(jugador.nombre, partida.deltas, prog.mejorRacha || 0).catch(function (e) { console.error(e); });
+  ranking.guardarStats(jugador.nombre, partida.deltas, prog.mejorRacha || 0, { privado: !!perfilCfg().privado }).catch(function (e) { console.error(e); });
 
   $('sf-emoji').textContent = aprobado ? '🎓' : '📚';
   $('sf-titulo').textContent = porTiempo ? '⏰ Se terminó el tiempo' : (aprobado ? '¡Aprobarías!' : 'Todavía no alcanza');
@@ -1018,6 +1399,69 @@ function terminarSimulacro(porTiempo) {
   $('sf-err-caja').hidden = !errores.length;
   if (aprobado) { confeti(150); Sonido.fin(); } else { Sonido.mal(); }
   mostrar('p-simfin');
+  revisarLogros();
+}
+
+/* ---------------- Niveles, insignias y perfil público ---------------- */
+// Después de cada partida: ¿subió de nivel?, ¿ganó insignias nuevas? Y se actualiza el perfil público.
+function revisarLogros() {
+  if (!prog) { return; }
+  const c = ctxJugador();
+  const antes = prog.ultimoNivel || 1;
+  if (c.nivel > antes) { setTimeout(function () { celebrarNivel(c, antes); }, 1200); }
+  prog.ultimoNivel = Math.max(antes, c.nivel);
+  const vistas = prog.insVistas || [];
+  const nuevas = c.ins.filter(function (id) { return vistas.indexOf(id) === -1; });
+  prog.insVistas = c.ins.slice();
+  nuevas.slice(0, 3).forEach(function (id, i) {
+    const x = insigniaPorId(id);
+    setTimeout(function () { aviso('🏅 Nueva insignia: ' + x.i + ' ' + x.n); }, 2600 + i * 4300);
+  });
+  guardarProg();
+  publicarPerfil();
+}
+function desbloqueosDelNivel(n) {
+  const l = [];
+  AVATARES.forEach(function (a) { if (a[1] === n) { l.push(a[0]); } });
+  COLORES.forEach(function (c) { if (c[2] === n) { l.push('color ' + c[1]); } });
+  Object.keys(MARCOS).forEach(function (k) { if (MARCOS[k].req === 'Nivel ' + n) { l.push('marco ' + MARCOS[k].n); } });
+  return l;
+}
+function celebrarNivel(c, antes) {
+  const d = $('m-nivel');
+  $('mn-nivel').textContent = c.nivel;
+  $('mn-titulo').textContent = c.nv.titulo;
+  const desb = [];
+  for (let n = antes + 1; n <= c.nivel; n++) { desb.push.apply(desb, desbloqueosDelNivel(n)); }
+  $('mn-desb').textContent = desb.length ? '🔓 Desbloqueaste: ' + desb.join(' · ') : 'Seguí sumando experiencia para desbloquear avatares, colores y marcos.';
+  confeti(180); Sonido.fin(); vibrar([60, 40, 60, 40, 120]);
+  if (!d.open) { d.showModal(); }
+}
+function publicarPerfil() {
+  if (!ranking || !jugador || !prog) { return; }
+  const c = ctxJugador(), pf = perfilCfg(), id = identidadPropia(c);
+  const datos = {
+    nombre: jugador.nombre, avatar: id.avatar || '', color: id.color || '', marco: id.marco || '',
+    frase: pf.frase == null ? -1 : pf.frase,
+    vitrina: (pf.vitrina || []).filter(function (x) { return c.ins.indexOf(x) !== -1; }).slice(0, 3),
+    insignias: c.ins.slice(0, 60), nivel: c.nivel, xp: Math.round(c.xp),
+    postula: (pf.postula || []).filter(function (x) { return puestoPorId(x); }).slice(0, 4),
+    privado: !!pf.privado
+  };
+  if (pf.privado) { datos.borrarCats = true; }
+  else if (prog.publicadoPrivado) {
+    // Al volver a público se publican de nuevo las estadísticas por área.
+    const cats = {};
+    Object.keys(prog.cats || {}).forEach(function (k) { if (CATEGORIAS[k]) { cats[k] = { v: prog.cats[k].v || 0, a: prog.cats[k].a || 0 }; } });
+    datos.cats = cats;
+  }
+  const huella = JSON.stringify(datos);
+  if (huella === prog.publicadoHuella) { return; }
+  ranking.actualizarPerfil(datos).then(function () {
+    prog.publicadoHuella = huella;
+    prog.publicadoPrivado = datos.privado;
+    guardarProg();
+  }).catch(function (e) { console.warn('No se pudo actualizar el perfil público:', e); });
 }
 
 /* ---------------- Duelo de estudio (2 a 4 personas) ---------------- */
@@ -1050,7 +1494,7 @@ async function crearSalaDuelo() {
   b.disabled = true;
   b.textContent = 'Creando sala…';
   try {
-    const codigo = await ranking.crearSala(jugador.nombre, puestoActual().id, preguntasDuelo(puestoActual()));
+    const codigo = await ranking.crearSala(jugador.nombre, puestoActual().id, preguntasDuelo(puestoActual()), identidadPropia());
     entrarSala(codigo);
   } catch (e) {
     console.error(e); errorDuelo('No se pudo crear la sala. Revisá tu conexión.');
@@ -1063,7 +1507,7 @@ async function unirseSalaDuelo(ev) {
   const bu = ev.target.querySelector('button[type=submit]');
   bu.disabled = true; bu.textContent = 'Entrando…';
   try {
-    const r = await ranking.unirseSala(codigo, jugador.nombre);
+    const r = await ranking.unirseSala(codigo, jugador.nombre, identidadPropia());
     if (r.error) { errorDuelo(r.error); return; }
     entrarSala(codigo);
   } catch (e) { console.error(e); errorDuelo('No se pudo entrar a la sala. Revisá el código y tu conexión.'); }
@@ -1077,9 +1521,15 @@ function entrarSala(codigo) {
 function limpiarDuelo() {
   if (!duelo) { return; }
   if (duelo.quitar) { duelo.quitar(); }
+  if (duelo.quitarInvEnviada) { duelo.quitarInvEnviada(); }
+  clearTimeout(duelo.timerInv);
+  if (duelo.invitacion && duelo.invitacion.estado === 'pendiente') {
+    ranking.responderInvitacion(duelo.invitacion.id, 'cancelada').catch(function (e) { console.error(e); });
+  }
   if (duelo.reloj) { cancelAnimationFrame(duelo.reloj.raf); }
   clearTimeout(duelo.hostTimer);
   duelo = null;
+  presenciaPorPantalla();
 }
 async function salirDuelo() {
   if (duelo && duelo.sala && duelo.sala.estado === 'espera') { try { await ranking.salirSala(duelo.codigo); } catch (e) { console.error(e); } }
@@ -1114,7 +1564,7 @@ function renderSala() {
   ul.innerHTML = '';
   jug.forEach(function (j) {
     const li = el('li'), av = el('span', 'avatar chico');
-    pintarAvatar(av, j.nombre);
+    pintarAvatar(av, j.nombre, j);
     li.append(av, el('span', null, j.nombre + (j.id === ranking.miIdSala() ? ' (vos)' : '')));
     if (j.id === sala.host) { li.append(el('small', 'insignia', 'anfitrión')); }
     ul.append(li);
@@ -1127,6 +1577,7 @@ function renderSala() {
   $('ds-espera').textContent = host
     ? (jug.length < 2 ? 'Esperando que se una al menos una persona más…' : '¡Listos! Empezá cuando estén todos.')
     : 'Esperando que ' + (anfitrion ? anfitrion.nombre : 'el anfitrión') + ' empiece el duelo…';
+  pintarInvitado();
   mostrar('p-sala');
 }
 
@@ -1186,7 +1637,7 @@ function renderDueloPregunta() {
   est.innerHTML = '';
   jug.forEach(function (j) {
     const chip = el('span', 'jug-chip' + (resp[j.id] ? ' listo' : '')), av = el('span', 'avatar mini');
-    pintarAvatar(av, j.nombre);
+    pintarAvatar(av, j.nombre, j);
     chip.append(av, el('span', null, j.nombre), el('b', null, resp[j.id] ? '✓' : '…'));
     est.append(chip);
   });
@@ -1273,7 +1724,7 @@ function revelarDuelo(q, resp, jug, idx) {
   ul.innerHTML = '';
   jug.forEach(function (j) {
     const r = resp[j.id], li = el('li', r && r.ok ? 'ok' : 'no'), av = el('span', 'avatar mini');
-    pintarAvatar(av, j.nombre);
+    pintarAvatar(av, j.nombre, j);
     li.append(av, el('span', 'rn', j.nombre), el('span', 'rr', r && r.ok ? '✔ +' + r.pts : (r && r.op ? '✘ «' + r.op + '»' : '⏰ sin respuesta')));
     ul.append(li);
   });
@@ -1311,7 +1762,7 @@ function renderDueloFin() {
   podio.innerHTML = '';
   orden.forEach(function (j, i) {
     const li = el('li', j.id === yo ? 'yo' : null), av = el('span', 'avatar chico');
-    pintarAvatar(av, j.nombre);
+    pintarAvatar(av, j.nombre, j);
     li.append(el('span', 'pos', ['🥇', '🥈', '🥉', '4'][i] || String(i + 1)), av,
       el('span', 'nom', j.nombre), el('span', 'pts', miles(tot[j.id].pts)), el('small', null, tot[j.id].ok + '/' + sala.preguntas.length));
     podio.append(li);
@@ -1340,7 +1791,8 @@ function renderDueloFin() {
     prog.duelos = prog.duelos || { jugados: 0, ganados: 0 };
     prog.duelos.jugados += 1; if (gano) { prog.duelos.ganados += 1; }
     guardarProg();
-    ranking.guardarStats(jugador.nombre, duelo.deltas, prog.mejorRacha || 0, { duelo: { gano: gano } }).catch(function (e) { console.error(e); });
+    setTimeout(revisarLogros, 400);
+    ranking.guardarStats(jugador.nombre, duelo.deltas, prog.mejorRacha || 0, { duelo: { gano: gano }, privado: !!perfilCfg().privado }).catch(function (e) { console.error(e); });
   }
   mostrar('p-dfin');
 }
@@ -1353,6 +1805,213 @@ function invitarSala() {
   window.open('https://wa.me/?text=' + encodeURIComponent(txt + url), '_blank', 'noopener');
 }
 
+/* ---------------- En línea ahora y desafíos ---------------- */
+/*
+ * Cada jugador avisa que está conectado cada 45 s mientras tiene el juego abierto (sin tocar nada).
+ * Desde la lista se lo puede desafiar: se crea una sala de duelo y le llega una invitación que
+ * puede aceptar o rechazar durante 60 s.
+ */
+const INV_SEG = 60;
+let enLinea = [], quitarLinea = null, quitarInv = null, timerLatido = null, timerLinea = null;
+let invActual = null, invTimer = null, ultimoOcupado = null, eventosPresencia = false;
+
+function ocupado() {
+  if (duelo) { return true; }
+  return ['p-ruleta', 'p-pregunta', 'p-sim', 'p-dpreg'].some(function (id) { return !$(id).hidden; });
+}
+function latido() {
+  if (!jugador || !ranking || !prog) { return; }
+  if (perfilCfg().ocultarEnLinea) { ranking.desconectar(); return; }
+  ultimoOcupado = ocupado();
+  ranking.latido({ nombre: jugador.nombre, puesto: jugador.puesto, ocupado: ultimoOcupado, identidad: identidadPropia(), desafios: !perfilCfg().noDesafios }).catch(function (e) { console.warn('Sin señal de presencia:', e); });
+}
+function iniciarPresencia() {
+  if (timerLatido || !jugador) { return; }
+  latido();
+  timerLatido = setInterval(function () { if (!document.hidden) { latido(); } }, 45000);
+  timerLinea = setInterval(renderEnLinea, 20000);
+  quitarLinea = ranking.escucharEnLinea(function (lista) { enLinea = lista; renderEnLinea(); });
+  quitarInv = ranking.escucharInvitaciones(recibirInvitaciones);
+  if (!eventosPresencia) {
+    eventosPresencia = true;
+    document.addEventListener('visibilitychange', function () {
+      if (!timerLatido) { return; }
+      if (document.hidden) { ranking.desconectar(); } else { latido(); }
+    });
+    window.addEventListener('pagehide', function () { if (timerLatido) { ranking.desconectar(); } });
+  }
+}
+function detenerPresencia() {
+  clearInterval(timerLatido); clearInterval(timerLinea);
+  timerLatido = null; timerLinea = null;
+  if (quitarLinea) { quitarLinea(); quitarLinea = null; }
+  if (quitarInv) { quitarInv(); quitarInv = null; }
+  cerrarInvitacion();
+  if (ranking) { ranking.desconectar(); }
+}
+// Al cambiar de pantalla se avisa enseguida si pasó a estar jugando o libre.
+function presenciaPorPantalla() {
+  if (timerLatido && ocupado() !== ultimoOcupado) { latido(); }
+}
+
+function renderEnLinea() {
+  const ul = $('linea-lista');
+  if (!ul || !ranking) { return; }
+  const yo = ranking.miIdSala(), ahora = Date.now();
+  const lista = enLinea.filter(function (j) { return j.id !== yo && ahora - j.ultimo < EN_LINEA_SEG * 1000; })
+    .sort(function (a, b) { return (esFavorito(b.id) ? 1 : 0) - (esFavorito(a.id) ? 1 : 0) || (a.ocupado ? 1 : 0) - (b.ocupado ? 1 : 0) || String(a.nombre).localeCompare(String(b.nombre), 'es'); });
+  $('linea-cuenta').textContent = lista.length ? '(' + lista.length + ')' : '';
+  ul.innerHTML = '';
+  if (!lista.length) {
+    ul.append(el('li', 'vacio', 'No hay nadie más en línea ahora. Compartí el link para estudiar en grupo.'));
+  }
+  lista.slice(0, 20).forEach(function (j) {
+    const li = el('li', j.ocupado ? 'ocupado' : null), punto = el('span', 'av-punto'), av = el('span', 'avatar chico');
+    pintarAvatar(av, j.nombre, j);
+    punto.append(av);
+    const p = puestoPorId(j.puesto), nom = el('span', 'nom'), txt = el('span', 'txt');
+    if (esFavorito(j.id)) { txt.append(el('span', 'fav', '★')); }
+    txt.append(document.createTextNode(j.nombre), el('small', null, (j.nivel ? 'Nv ' + j.nivel + ' · ' : '') + (p ? p.icono + ' ' + p.corto : '') + (j.ocupado ? ' · jugando' : ' · disponible')));
+    nom.append(txt);
+    nom.style.cursor = 'pointer';
+    nom.addEventListener('click', function () { abrirPerfil(j.id, j.nombre); });
+    li.append(punto, nom);
+    if (j.ocupado) {
+      li.append(el('span', 'estado', '🎮 jugando'));
+    } else if (j.desafios === false) {
+      li.append(el('span', 'estado', '🔕 sin desafíos'));
+    } else {
+      const b = el('button', 'btn primario', '⚔️ Desafiar');
+      b.type = 'button';
+      b.addEventListener('click', function () { desafiar(j, b); });
+      li.append(b);
+    }
+    ul.append(li);
+  });
+  $('linea-pie').textContent = ranking.modo === 'firebase'
+    ? 'Aparecés en línea mientras tenés el juego abierto. Si alguien te desafía, te llega un aviso.'
+    : 'Modo de prueba: solo se ven las otras pestañas de este navegador.';
+}
+
+let timerAviso = null;
+function aviso(texto) {
+  const a = $('aviso-flotante');
+  a.textContent = texto;
+  a.hidden = false;
+  clearTimeout(timerAviso);
+  timerAviso = setTimeout(function () { a.hidden = true; }, 4000);
+}
+
+async function desafiar(j, boton) {
+  if (duelo) { aviso('Ya estás en una sala de duelo.'); return; }
+  boton.disabled = true;
+  boton.textContent = 'Enviando…';
+  try {
+    const p = puestoActual();
+    const codigo = await ranking.crearSala(jugador.nombre, p.id, preguntasDuelo(p), identidadPropia());
+    entrarSala(codigo);
+    const id = await ranking.invitar({ deNombre: jugador.nombre, para: j.id, paraNombre: j.nombre, puesto: p.id, codigo: codigo });
+    if (!duelo || duelo.codigo !== codigo) { ranking.responderInvitacion(id, 'cancelada'); return; }
+    duelo.invitacion = { id: id, nombre: j.nombre, estado: 'pendiente' };
+    pintarInvitado();
+    duelo.quitarInvEnviada = ranking.escucharInvitacion(id, function (inv) {
+      if (!duelo || !duelo.invitacion || duelo.invitacion.id !== id) { return; }
+      const est = inv ? inv.estado : 'cancelada';
+      if (est === duelo.invitacion.estado) { return; }
+      duelo.invitacion.estado = est;
+      clearTimeout(duelo.timerInv);
+      if (est === 'aceptada') { aviso('✅ ' + j.nombre + ' aceptó el desafío'); Sonido.ok(); }
+      else if (est === 'rechazada') { aviso('🙅 ' + j.nombre + ' no puede ahora'); }
+      else if (est === 'cancelada') { aviso('⌛ ' + j.nombre + ' no respondió a tiempo'); }
+      pintarInvitado();
+    });
+    duelo.timerInv = setTimeout(function () {
+      if (duelo && duelo.invitacion && duelo.invitacion.id === id && duelo.invitacion.estado === 'pendiente') {
+        ranking.responderInvitacion(id, 'cancelada').catch(function (e) { console.error(e); });
+      }
+    }, INV_SEG * 1000);
+  } catch (e) {
+    console.error(e);
+    aviso('No se pudo enviar el desafío. Revisá tu conexión.');
+    boton.disabled = false;
+    boton.textContent = '⚔️ Desafiar';
+  }
+}
+function pintarInvitado() {
+  const caja = $('ds-invitado');
+  const inv = duelo && duelo.invitacion;
+  if (!inv) { caja.hidden = true; return; }
+  caja.textContent = {
+    pendiente: '⚔️ Desafío enviado a ' + inv.nombre + '. Esperando que acepte…',
+    aceptada: '✅ ' + inv.nombre + ' aceptó: está entrando a la sala.',
+    rechazada: '🙅 ' + inv.nombre + ' no puede ahora. Podés desafiar a otra persona o compartir el código.',
+    cancelada: '⌛ ' + inv.nombre + ' no respondió. Podés desafiar a otra persona o compartir el código.'
+  }[inv.estado] || '';
+  caja.hidden = false;
+}
+
+function recibirInvitaciones(lista) {
+  const ahora = Date.now();
+  const vigentes = lista.filter(function (i) { return ahora - i.creado < INV_SEG * 1000; })
+    .sort(function (a, b) { return b.creado - a.creado; });
+  if (invActual && !vigentes.some(function (i) { return i.id === invActual.id; })) { cerrarInvitacion(); }
+  if (!invActual && vigentes.length) { mostrarInvitacion(vigentes[0]); }
+}
+function mostrarInvitacion(inv) {
+  invActual = inv;
+  pintarAvatar($('inv-avatar'), inv.deNombre);
+  $('inv-titulo').textContent = '⚔️ ' + inv.deNombre + ' te desafía a un duelo';
+  const p = puestoPorId(inv.puesto);
+  $('inv-sub').textContent = 'Temario de ' + (p ? p.corto : inv.puesto) + ' · ' + DUELO_PREG + ' preguntas'
+    + (ocupado() ? '. Si aceptás, dejás lo que estás jugando.' : '.');
+  $('invitacion').hidden = false;
+  Sonido.medalla();
+  vibrar([120, 80, 120]);
+  const restante = Math.max(5000, INV_SEG * 1000 - (Date.now() - inv.creado));
+  const barra = $('inv-barra');
+  barra.style.transition = 'none';
+  barra.style.transform = 'scaleX(1)';
+  void barra.offsetWidth;
+  barra.style.transition = 'transform ' + restante + 'ms linear';
+  barra.style.transform = 'scaleX(0)';
+  clearTimeout(invTimer);
+  invTimer = setTimeout(cerrarInvitacion, restante);
+}
+function cerrarInvitacion() {
+  clearTimeout(invTimer);
+  invActual = null;
+  const c = $('invitacion');
+  if (c) { c.hidden = true; }
+}
+async function aceptarInvitacion() {
+  const inv = invActual;
+  if (!inv) { return; }
+  cerrarInvitacion();
+  // Deja lo que estaba haciendo.
+  if (partida && partida.modo === 'simulacro' && !partida.terminado) { partida.terminado = true; clearInterval(relojSim); }
+  detenerReloj();
+  partida = null;
+  if (duelo) {
+    if (duelo.sala && duelo.sala.estado === 'espera') { try { await ranking.salirSala(duelo.codigo); } catch (e) { console.error(e); } }
+    limpiarDuelo();
+  }
+  try {
+    await ranking.responderInvitacion(inv.id, 'aceptada');
+    const r = await ranking.unirseSala(inv.codigo, jugador.nombre, identidadPropia());
+    if (r.error) { aviso(r.error); irInicio(); return; }
+    entrarSala(inv.codigo);
+  } catch (e) {
+    console.error(e);
+    aviso('No se pudo entrar al duelo. Revisá tu conexión.');
+    irInicio();
+  }
+}
+function rechazarInvitacion() {
+  const inv = invActual;
+  cerrarInvitacion();
+  if (inv) { ranking.responderInvitacion(inv.id, 'rechazada').catch(function (e) { console.error(e); }); }
+}
+
 /* Racha de días seguidos con al menos una partida, práctica o repaso. */
 function actualizarRacha() {
   const r = prog.racha || (prog.racha = { dias: 0, ultimo: null });
@@ -1362,6 +2021,7 @@ function actualizarRacha() {
     const a = ayer.getFullYear() + '-' + String(ayer.getMonth() + 1).padStart(2, '0') + '-' + String(ayer.getDate()).padStart(2, '0');
     r.dias = r.ultimo === a ? r.dias + 1 : 1;
     r.ultimo = h;
+    r.max = Math.max(r.max || 0, r.dias);
     guardarProg();
   }
   return r;
@@ -1439,7 +2099,7 @@ async function confirmarInscripcion(ev) {
       const p = puestoPorId(x.pid);
       let a = 0, v = 0;
       p.cats.forEach(function (k) { const s = prog.cats[k]; if (s) { a += s.a || 0; v += s.v || 0; } });
-      await ranking.guardarPartida(n, x.pid, { puntos: x.mejor, aciertos: Math.min(a, v), preguntas: v, deltas: {}, racha: Math.min(15, prog.mejorRacha || 0), mejorRacha: Math.min(400, prog.mejorRacha || 0) });
+      await ranking.guardarPartida(n, x.pid, { puntos: x.mejor, aciertos: Math.min(a, v), preguntas: v, deltas: {}, racha: Math.min(15, prog.mejorRacha || 0), mejorRacha: Math.min(400, prog.mejorRacha || 0), identidad: identidadPropia() });
     }
     $('m-inscripcion').close();
     inscripcionPend = null;
@@ -1470,6 +2130,13 @@ function enlazar() {
   $('btn-ins-luego').addEventListener('click', function () { sessionStorage.setItem('andeJuego.inscripcionLuego', '1'); $('m-inscripcion').close(); });
   // Duelo
   $('btn-duelo').addEventListener('click', abrirDuelo);
+  $('btn-ed-volver').addEventListener('click', function () { abrirPerfil(ranking.miId(), jugador.nombre); });
+  $('btn-ed-guardar').addEventListener('click', guardarEditor);
+  $('ed-nombre').addEventListener('input', function (e) { if (ed) { ed.nombre = e.target.value.trim() || jugador.nombre; renderEditor(); } });
+  $('i-nivel').addEventListener('click', function () { abrirPerfil(ranking.miId(), jugador.nombre); });
+  $('i-meta').addEventListener('click', function () { aviso('🎯 Tu meta: ' + (perfilCfg().meta || 20) + ' preguntas por día. Podés cambiarla en Personalizar.'); });
+  $('btn-inv-si').addEventListener('click', aceptarInvitacion);
+  $('btn-inv-no').addEventListener('click', rechazarInvitacion);
   $('btn-sim').addEventListener('click', iniciarSimulacro);
   $('btn-s-sig').addEventListener('click', siguienteSim);
   $('btn-s-entregar').addEventListener('click', function () {
@@ -1524,6 +2191,7 @@ function enlazar() {
   });
   $('btn-cambiar-jugador').addEventListener('click', async function () {
     if (!confirm('¿Cambiar de jugador? Vas a registrar otro nombre en este dispositivo. El ranking de ' + jugador.nombre + ' queda guardado.')) { return; }
+    detenerPresencia();
     try { await ranking.cambiarJugador(); } catch (e) { console.error(e); }
     subirProgreso();
     jugador = null; prog = null; localStorage.removeItem('andeJuego.jugador');
@@ -1575,6 +2243,7 @@ function prepararMovil() {
 (async function arrancar() {
   enlazar();
   prepararMovil();
+  aplicarPreferencias();
   ranking = await crearRanking();
   quitarTotales = ranking.escucharTotales(function (t) {
     totales = t;
@@ -1585,7 +2254,9 @@ function prepararMovil() {
   if (jugador && jugador.idp && puestoPorId(jugador.puesto)) {
     if (!prog) { cargarProg(); }
     irInicio();
+    iniciarPresencia();
     revisarInscripcion();
+    publicarPerfil();
   } else {
     jugador = null;
     iniciarRegistro();

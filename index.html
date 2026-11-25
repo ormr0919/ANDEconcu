@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Unbounded:wght@600;700;800;900&display=swap">
-<link rel="stylesheet" href="css/juego.css?v=3b">
+<link rel="stylesheet" href="css/juego.css?v=4">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -108,6 +108,17 @@
       </div>
     </div>
 
+    <div class="progreso-cab">
+      <button class="nivel-btn" type="button" id="i-nivel" aria-label="Ver mi nivel y mi perfil">
+        <span class="nv"><b id="i-nivel-n">1</b><small>nivel</small></span>
+        <span class="nv-txt"><b id="i-nivel-t">Aprendiz</b><span class="xp"><i id="i-xp-barra"></i></span><small id="i-xp-txt"></small></span>
+      </button>
+      <button class="meta-dia" type="button" id="i-meta" aria-label="Meta diaria">
+        <span class="anillo" id="i-meta-anillo"><b id="i-meta-n">0</b></span>
+        <small id="i-meta-txt">meta de hoy</small>
+      </button>
+    </div>
+
     <p class="aviso" id="i-examen"></p>
 
     <button class="btn enorme primario" type="button" id="btn-jugar">
@@ -130,6 +141,14 @@
         <span class="btn-icono">🎯</span><span>Practicar un tema<small>Sin reloj ni ranking</small></span>
       </button>
     </div>
+
+    <section class="tarjeta" id="linea-caja">
+      <div class="tit-fila">
+        <h2>🟢 En línea ahora <span class="cuenta" id="linea-cuenta"></span></h2>
+      </div>
+      <ul class="linea" id="linea-lista"></ul>
+      <p class="pie-top" id="linea-pie"></p>
+    </section>
 
     <section class="tarjeta">
       <div class="tit-fila">
@@ -174,10 +193,20 @@
       <span class="avatar grande" id="pf-avatar"></span>
       <div>
         <h1 id="pf-nombre"></h1>
+        <p class="pf-frase" id="pf-frase" hidden></p>
         <p class="pf-sub" id="pf-sub"></p>
       </div>
     </div>
+    <div class="pf-nivel" id="pf-nivel"></div>
+    <div class="pf-postula" id="pf-postula"></div>
+    <div class="pf-acciones" id="pf-acciones"></div>
     <div class="pf-stats" id="pf-stats"></div>
+
+    <section class="tarjeta" id="pf-ins-caja">
+      <div class="tit-fila"><h2>🏅 Insignias <span class="cuenta" id="pf-ins-cuenta"></span></h2></div>
+      <div class="vitrina" id="pf-vitrina"></div>
+      <div class="insignias" id="pf-insignias"></div>
+    </section>
 
     <section class="tarjeta">
       <h2>🏆 Récords por puesto</h2>
@@ -188,6 +217,12 @@
       <h2>📊 Dominio por área</h2>
       <div class="leyenda" aria-hidden="true"><span class="lv alto">Dominado ≥ 80 %</span><span class="lv medio">En camino 60–79 %</span><span class="lv bajo">A reforzar &lt; 60 %</span><span class="lv nuevo">Menos de 5 respuestas</span></div>
       <div class="dominio" id="pf-areas"></div>
+    </section>
+
+    <section class="tarjeta privado" id="pf-sim-caja" hidden>
+      <div class="tit-fila"><h2>📈 Tus simulacros</h2><span class="candado">🔒 Solo vos</span></div>
+      <div class="sim-graf" id="pf-sim-graf"></div>
+      <p class="ayuda" id="pf-sim-pie"></p>
     </section>
 
     <section class="tarjeta" id="pf-memoria" hidden>
@@ -204,6 +239,62 @@
       <ol class="plan" id="pf-plan"></ol>
       <button class="btn grande primario" type="button" id="btn-pf-entreno">🧠 Empezar entrenamiento personalizado</button>
     </section>
+  </section>
+
+  <!-- Personalizar perfil -->
+  <section class="pantalla" id="p-editar" hidden>
+    <button class="volver" type="button" id="btn-ed-volver">← Volver sin guardar</button>
+    <div class="ed-vista">
+      <span class="avatar grande" id="ed-avatar"></span>
+      <div><b id="ed-nombre-vista"></b><small id="ed-nivel-vista"></small><em id="ed-frase-vista"></em></div>
+    </div>
+    <section class="tarjeta">
+      <h2>✏️ Nombre</h2>
+      <label class="campo" for="ed-nombre">Cómo aparecés en el ranking
+        <input id="ed-nombre" type="text" maxlength="24" minlength="2" autocomplete="nickname">
+      </label>
+    </section>
+    <section class="tarjeta">
+      <h2>🙂 Avatar</h2>
+      <p class="ayuda">Algunos se desbloquean al subir de nivel.</p>
+      <div class="ed-grid" id="ed-avatares"></div>
+    </section>
+    <section class="tarjeta">
+      <h2>🎨 Color</h2>
+      <div class="ed-colores" id="ed-colores"></div>
+    </section>
+    <section class="tarjeta">
+      <h2>🖼️ Marco</h2>
+      <div class="ed-marcos" id="ed-marcos"></div>
+    </section>
+    <section class="tarjeta">
+      <h2>💬 Frase</h2>
+      <div class="ed-frases" id="ed-frases"></div>
+    </section>
+    <section class="tarjeta">
+      <h2>🏅 Vitrina</h2>
+      <p class="ayuda">Elegí hasta 3 insignias para mostrar en tu perfil.</p>
+      <div class="insignias elegir" id="ed-vitrina"></div>
+    </section>
+    <section class="tarjeta">
+      <h2>🎯 ¿A qué puestos postulaste?</h2>
+      <p class="ayuda">Se muestran en tu perfil. Podés marcar varios.</p>
+      <div class="puestos" id="ed-postula"></div>
+    </section>
+    <section class="tarjeta">
+      <h2>⚙️ Preferencias</h2>
+      <div class="ed-prefs" id="ed-prefs"></div>
+      <label class="campo ed-meta" for="ed-meta">🎯 Meta diaria
+        <select id="ed-meta">
+          <option value="10">10 preguntas por día</option>
+          <option value="20">20 preguntas por día</option>
+          <option value="30">30 preguntas por día</option>
+          <option value="50">50 preguntas por día</option>
+        </select>
+      </label>
+    </section>
+    <p class="error" id="ed-error" hidden></p>
+    <button class="btn grande primario" type="button" id="btn-ed-guardar">💾 Guardar cambios</button>
   </section>
 
   <!-- Simulacro de examen -->
@@ -285,6 +376,7 @@
       <h2>Jugadores <span id="ds-cuenta"></span></h2>
       <ul class="sala-jug" id="ds-jugadores"></ul>
     </section>
+    <p class="aviso" id="ds-invitado" hidden></p>
     <button class="btn grande primario" type="button" id="btn-sala-empezar" hidden>¡Empezar duelo!</button>
     <p class="ruleta-msg" id="ds-espera"></p>
   </section>
@@ -418,6 +510,31 @@
   </form>
 </dialog>
 
+<!-- Invitación de desafío recibida -->
+<div class="invitacion" id="invitacion" role="alertdialog" aria-live="assertive" aria-labelledby="inv-titulo" hidden>
+  <div class="inv-caja">
+    <div class="inv-cab"><span class="avatar" id="inv-avatar"></span><div><p class="inv-titulo" id="inv-titulo"></p><p class="inv-sub" id="inv-sub"></p></div></div>
+    <div class="inv-tiempo" aria-hidden="true"><i id="inv-barra"></i></div>
+    <div class="fila-btn">
+      <button class="btn grande primario" type="button" id="btn-inv-si">⚔️ Aceptar</button>
+      <button class="btn grande secundario" type="button" id="btn-inv-no">Ahora no</button>
+    </div>
+  </div>
+</div>
+<div class="aviso-flotante" id="aviso-flotante" role="status" hidden></div>
+
+<!-- Subida de nivel -->
+<dialog class="modal nivel-modal" id="m-nivel">
+  <form method="dialog" class="modal-caja">
+    <p class="mn-estrella" aria-hidden="true">⭐</p>
+    <p class="mn-sub">¡Subiste al nivel</p>
+    <p class="mn-num" id="mn-nivel">2</p>
+    <h2 id="mn-titulo"></h2>
+    <p id="mn-desb"></p>
+    <button class="btn grande primario" value="ok">¡Vamos!</button>
+  </form>
+</dialog>
+
 <!-- Confirmar inscripción en el ranking en línea -->
 <dialog class="modal" id="m-inscripcion">
   <form class="modal-caja" id="f-inscripcion" autocomplete="off">
@@ -437,6 +554,6 @@
 <canvas id="confeti" aria-hidden="true"></canvas>
 <div class="sin-red" id="sin-red" hidden>📴 Sin conexión: podés seguir practicando. El ranking y los duelos necesitan internet.</div>
 
-<script type="module" src="js/app.js?v=3b"></script>
+<script type="module" src="js/app.js?v=4"></script>
 </body>
 </html>

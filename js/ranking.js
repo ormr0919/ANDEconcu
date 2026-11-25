@@ -13,13 +13,15 @@
  * El perfil público solo guarda números agregados. Las recomendaciones personales
  * se calculan en el navegador de cada jugador y no se publican.
  */
-import { FIREBASE_CONFIG } from './firebase-config.js?v=3b';
-
-// Con ?local=1 se usa el modo local aunque haya Firebase (para probar sin tocar la base real).
-const FORZAR_LOCAL = new URLSearchParams(location.search).has('local');
+import { FIREBASE_CONFIG } from './firebase-config.js?v=4';
 
 const SDK = 'https://www.gstatic.com/firebasejs/11.0.2/';
 const TOP_N = 10;
+
+// Con ?local=1 en la dirección se usa el modo local aunque haya Firebase: sirve para probar
+// cambios sin tocar la base de datos real.
+const FORZAR_LOCAL = new URLSearchParams(location.search).has('local');
+export const EN_LINEA_SEG = 90;   // se considera «en línea» a quien dio señales en los últimos 90 s
 
 export async function crearRanking() {
   if (FIREBASE_CONFIG && !FORZAR_LOCAL) {
@@ -27,6 +29,9 @@ export async function crearRanking() {
       return await rankingFirebase(FIREBASE_CONFIG);
     } catch (e) {
       console.error('No se pudo conectar con Firebase; se usa el ranking local.', e);
+      const local = rankingLocal();
+      local.errorFirebase = (e && (e.code || e.message)) || 'desconocido';
+      return local;
     }
   }
   return rankingLocal();
@@ -97,6 +102,7 @@ async function rankingFirebase(cfg) {
           racha: Math.max(d.racha || 0, r.racha || 0),
           ultimo: F.serverTimestamp()
         };
+        Object.assign(fila, cosmeticos(r.identidad));
         tx.set(refRank, fila);
         const pd = p.exists() ? p.data() : { partidas: 0, jugadores: 0 };
         tx.set(refPuesto, { partidas: (pd.partidas || 0) + 1, jugadores: (pd.jugadores || 0) + (s.exists() ? 0 : 1) });
@@ -110,7 +116,7 @@ async function rankingFirebase(cfg) {
           puestos: puestos,
           mejorRacha: Math.max(jd.mejorRacha || 0, r.mejorRacha || 0)
         };
-        if (Object.keys(r.deltas || {}).length) { datosJug.cats = incrementos(r.deltas); }
+        if (!r.privado && Object.keys(r.deltas || {}).length) { datosJug.cats = incrementos(r.deltas); }
         tx.set(refJug, datosJug, { merge: true });
         resultado = { record: r.puntos > (d.mejor || 0), mejorAnterior: d.mejor || 0 };
       });
@@ -125,7 +131,8 @@ async function rankingFirebase(cfg) {
       await F.runTransaction(db, async function (tx) {
         const j = await tx.get(ref);
         const jd = j.exists() ? j.data() : {};
-        const datos = { nombre: nombre, ultimo: F.serverTimestamp(), cats: incrementos(deltas), mejorRacha: Math.max(jd.mejorRacha || 0, mejorRacha || 0) };
+        const datos = { nombre: nombre, ultimo: F.serverTimestamp(), mejorRacha: Math.max(jd.mejorRacha || 0, mejorRacha || 0) };
+        if (!(extra && extra.privado)) { datos.cats = incrementos(deltas); }
         if (!j.exists()) { datos.partidas = 0; datos.creado = F.serverTimestamp(); }
         if (extra && extra.duelo) {
           const du = jd.duelos || { jugados: 0, ganados: 0 };
@@ -135,7 +142,7 @@ async function rankingFirebase(cfg) {
       });
     },
 
-    // Para confirmar la inscripción y subir lo que quedó guardado solo en el celular.
+    // Lectura del estado en la nube, para recuperar lo que no se haya podido subir.
     async leerFila(puesto) {
       const uid = await asegurarSesion();
       const s = await F.getDoc(F.doc(db, 'puestos', puesto, 'ranking', uid));
@@ -146,9 +153,23 @@ async function rankingFirebase(cfg) {
       const s = await F.getDoc(F.doc(db, 'jugadores', uid));
       return s.exists() ? s.data() : null;
     },
+
+    // Perfil público: avatar, color, marco, frase, vitrina, insignias, nivel, puestos a los que postula y privacidad.
     async actualizarPerfil(datos) {
       const uid = await asegurarSesion();
-      await F.setDoc(F.doc(db, 'jugadores', uid), datos, { merge: true });
+      const d = Object.assign({}, datos);
+      if (d.borrarCats) { d.cats = F.deleteField(); }
+      delete d.borrarCats;
+      await F.setDoc(F.doc(db, 'jugadores', uid), d, { merge: true });
+    },
+    // Cambio de nombre o de aspecto: actualiza el perfil y las filas del ranking que ya existan.
+    async actualizarIdentidad(nombre, identidad, puestos) {
+      const uid = await asegurarSesion();
+      const cos = Object.assign({ nombre: nombre }, cosmeticos(identidad));
+      await F.setDoc(F.doc(db, 'jugadores', uid), { nombre: nombre }, { merge: true });
+      for (const pid of puestos || []) {
+        try { await F.updateDoc(F.doc(db, 'puestos', pid, 'ranking', uid), cos); } catch (e) { /* todavía no jugó ese puesto */ }
+      }
     },
 
     escucharTop(puesto, cb, orden) {
@@ -185,24 +206,60 @@ async function rankingFirebase(cfg) {
       try { return JSON.parse(s.data().datos); } catch (e) { return null; }
     },
 
+    /* ----- Presencia («en línea ahora») e invitaciones de desafío ----- */
+    async latido(datos) {
+      const uid = await asegurarSesion();
+      await F.setDoc(F.doc(db, 'presencia', uid), Object.assign({ nombre: datos.nombre, puesto: datos.puesto, ocupado: !!datos.ocupado, desafios: datos.desafios !== false, ultimo: F.serverTimestamp() }, cosmeticos(datos.identidad)));
+    },
+    async desconectar() {
+      const uid = auth.currentUser && auth.currentUser.uid;
+      if (uid) { try { await F.deleteDoc(F.doc(db, 'presencia', uid)); } catch (e) { /* sin conexión */ } }
+    },
+    escucharEnLinea(cb) {
+      const desde = F.Timestamp.fromMillis(Date.now() - 10 * 60000);
+      const q = F.query(F.collection(db, 'presencia'), F.where('ultimo', '>', desde), F.orderBy('ultimo', 'desc'), F.limit(60));
+      return F.onSnapshot(q, function (snap) {
+        cb(snap.docs.map(function (d) { const x = d.data(); return Object.assign({}, x, { id: d.id, ultimo: x.ultimo ? x.ultimo.toMillis() : Date.now() }); }));
+      }, function (e) { console.error(e); cb([]); });
+    },
+    async invitar(datos) {
+      const uid = await asegurarSesion();
+      const ref = await F.addDoc(F.collection(db, 'invitaciones'), {
+        de: uid, deNombre: datos.deNombre, para: datos.para, paraNombre: datos.paraNombre,
+        puesto: datos.puesto, codigo: datos.codigo, estado: 'pendiente', creado: F.serverTimestamp()
+      });
+      return ref.id;
+    },
+    escucharInvitaciones(cb) {
+      const uid = auth.currentUser.uid;
+      const q = F.query(F.collection(db, 'invitaciones'), F.where('para', '==', uid), F.where('estado', '==', 'pendiente'));
+      return F.onSnapshot(q, function (snap) {
+        cb(snap.docs.map(function (d) { const x = d.data(); return Object.assign({ id: d.id }, x, { creado: x.creado ? x.creado.toMillis() : Date.now() }); }));
+      }, function (e) { console.error(e); });
+    },
+    escucharInvitacion(id, cb) {
+      return F.onSnapshot(F.doc(db, 'invitaciones', id), function (s) { cb(s.exists() ? s.data() : null); }, function (e) { console.error(e); });
+    },
+    async responderInvitacion(id, estado) { await F.updateDoc(F.doc(db, 'invitaciones', id), { estado: estado }); },
+
     /* ----- Salas de duelo (2 a 4 jugadores) ----- */
     miIdSala() { return auth.currentUser && auth.currentUser.uid; },
 
-    async crearSala(nombre, puesto, preguntas) {
+    async crearSala(nombre, puesto, preguntas, identidad) {
       const uid = await asegurarSesion();
       for (let intento = 0; intento < 6; intento++) {
         const codigo = codigoSala();
         const ref = F.doc(db, 'salas', codigo);
         const s = await F.getDoc(ref);
         if (s.exists()) { continue; }
-        const jugadores = {}; jugadores[uid] = { nombre: nombre, orden: 0 };
+        const jugadores = {}; jugadores[uid] = Object.assign({ nombre: nombre, orden: 0 }, cosmeticos(identidad));
         await F.setDoc(ref, { codigo: codigo, host: uid, puesto: puesto, preguntas: preguntas, estado: 'espera', idx: 0, fase: 'pregunta', jugadores: jugadores, respuestas: {}, creado: F.serverTimestamp() });
         return codigo;
       }
       throw new Error('No se pudo crear la sala');
     },
 
-    async unirseSala(codigo, nombre) {
+    async unirseSala(codigo, nombre, identidad) {
       const uid = await asegurarSesion();
       const ref = F.doc(db, 'salas', codigo);
       return F.runTransaction(db, async function (tx) {
@@ -212,7 +269,7 @@ async function rankingFirebase(cfg) {
         if (ids.indexOf(uid) !== -1) { return { ok: true }; }
         if (d.estado !== 'espera') { return { error: 'Ese duelo ya empezó.' }; }
         if (ids.length >= 4) { return { error: 'La sala está llena (máximo 4).' }; }
-        const c = {}; c['jugadores.' + uid] = { nombre: nombre, orden: ids.length };
+        const c = {}; c['jugadores.' + uid] = Object.assign({ nombre: nombre, orden: ids.length }, cosmeticos(identidad));
         tx.update(ref, c);
         return { ok: true };
       });
@@ -310,6 +367,7 @@ function rankingLocal() {
         racha: Math.max(prev ? prev.racha || 0 : 0, r.racha || 0),
         ultimo: Date.now()
       };
+      Object.assign(fila, cosmeticos(r.identidad));
       p.ranking[miId] = fila;
       p.partidas += 1;
       if (!prev) { p.jugadores += 1; }
@@ -317,7 +375,7 @@ function rankingLocal() {
       j.partidas += 1;
       j.puestos[puesto] = { mejor: fila.mejor, partidas: fila.partidas };
       j.mejorRacha = Math.max(j.mejorRacha || 0, r.mejorRacha || 0);
-      sumar(j, r.deltas);
+      if (!r.privado) { sumar(j, r.deltas); }
       escribir(d);
       return { record: r.puntos > (prev ? prev.mejor : 0), mejorAnterior: prev ? prev.mejor : 0 };
     },
@@ -326,7 +384,7 @@ function rankingLocal() {
       if (!Object.keys(deltas || {}).length) { return; }
       const d = leer();
       const j = jugadorDe(d, nombre);
-      sumar(j, deltas);
+      if (!(extra && extra.privado)) { sumar(j, deltas); }
       j.mejorRacha = Math.max(j.mejorRacha || 0, mejorRacha || 0);
       if (extra && extra.duelo) {
         j.duelos = j.duelos || { jugados: 0, ganados: 0 };
@@ -337,7 +395,20 @@ function rankingLocal() {
 
     async leerFila(puesto) { const p = leer().puestos[puesto]; return p && p.ranking[miId] ? p.ranking[miId] : null; },
     async leerPerfil() { return leer().jugadores[miId] || null; },
-    async actualizarPerfil(datos) { const d = leer(); const j = jugadorDe(d, datos.nombre || 'Jugador'); Object.assign(j, datos); escribir(d); },
+    async actualizarPerfil(datos) {
+      const d = leer(), j = jugadorDe(d, datos.nombre || (d.jugadores[miId] || {}).nombre || 'Jugador');
+      const x = Object.assign({}, datos);
+      if (x.borrarCats) { delete j.cats; }
+      delete x.borrarCats;
+      Object.assign(j, x);
+      escribir(d);
+    },
+    async actualizarIdentidad(nombre, identidad, puestos) {
+      const d = leer(), cos = Object.assign({ nombre: nombre }, cosmeticos(identidad));
+      jugadorDe(d, nombre);
+      (puestos || []).forEach(function (pid) { const p = d.puestos[pid]; if (p && p.ranking[miId]) { Object.assign(p.ranking[miId], cos); } });
+      escribir(d);
+    },
 
     escucharTop(puesto, cb, orden) {
       const campo = orden || 'mejor';
@@ -370,27 +441,67 @@ function rankingLocal() {
     async guardarProgreso() { },
     async cargarProgreso() { return null; },
 
+    /* ----- Presencia e invitaciones en modo local: entre pestañas de este navegador (para probar). ----- */
+    async latido(datos) {
+      const d = leer();
+      d.presencia = d.presencia || {};
+      d.presencia[idTab] = Object.assign({ nombre: datos.nombre, puesto: datos.puesto, ocupado: !!datos.ocupado, desafios: datos.desafios !== false, ultimo: Date.now() }, cosmeticos(datos.identidad));
+      escribir(d);
+    },
+    async desconectar() {
+      const d = leer();
+      if (d.presencia && d.presencia[idTab]) { delete d.presencia[idTab]; escribir(d); }
+    },
+    escucharEnLinea(cb) {
+      return escuchar(function () {
+        const pr = leer().presencia || {};
+        cb(Object.keys(pr).map(function (id) { return Object.assign({ id: id }, pr[id]); }));
+      });
+    },
+    async invitar(datos) {
+      const d = leer();
+      d.invitaciones = d.invitaciones || {};
+      const id = 'I' + Math.random().toString(36).slice(2, 10);
+      d.invitaciones[id] = Object.assign({ de: idTab, estado: 'pendiente', creado: Date.now() }, datos);
+      escribir(d);
+      return id;
+    },
+    escucharInvitaciones(cb) {
+      return escuchar(function () {
+        const inv = leer().invitaciones || {};
+        cb(Object.keys(inv).filter(function (id) { return inv[id].para === idTab && inv[id].estado === 'pendiente'; })
+          .map(function (id) { return Object.assign({ id: id }, inv[id]); }));
+      });
+    },
+    escucharInvitacion(id, cb) {
+      return escuchar(function () { const inv = leer().invitaciones || {}; cb(inv[id] || null); });
+    },
+    async responderInvitacion(id, estado) {
+      const d = leer();
+      if (d.invitaciones && d.invitaciones[id]) { d.invitaciones[id].estado = estado; escribir(d); }
+    },
+
     /* ----- Salas de duelo: en modo local funcionan entre pestañas del mismo navegador (para probar). ----- */
     miIdSala() { return idTab; },
 
-    async crearSala(nombre, puesto, preguntas) {
+    async crearSala(nombre, puesto, preguntas, identidad) {
       const d = leer();
       d.salas = d.salas || {};
       const codigo = codigoSala();
-      const jugadores = {}; jugadores[idTab] = { nombre: nombre, orden: 0 };
+      const jugadores = {}; jugadores[idTab] = Object.assign({ nombre: nombre, orden: 0 }, cosmeticos(identidad));
       d.salas[codigo] = { codigo: codigo, host: idTab, puesto: puesto, preguntas: preguntas, estado: 'espera', idx: 0, fase: 'pregunta', jugadores: jugadores, respuestas: {}, creado: Date.now() };
       escribir(d);
       return codigo;
     },
 
-    async unirseSala(codigo, nombre) {
+    async unirseSala(codigo, nombre, identidad) {
       const d = leer(), sala = d.salas && d.salas[codigo];
       if (!sala) { return { error: 'No existe una sala con ese código.' }; }
       const ids = Object.keys(sala.jugadores);
       if (ids.indexOf(idTab) !== -1) { return { ok: true }; }
       if (sala.estado !== 'espera') { return { error: 'Ese duelo ya empezó.' }; }
       if (ids.length >= 4) { return { error: 'La sala está llena (máximo 4).' }; }
-      sala.jugadores[idTab] = { nombre: nombre, orden: ids.length };
+      sala.jugadores[idTab] = Object.assign({ nombre: nombre, orden: ids.length }, cosmeticos(identidad));
       escribir(d);
       return { ok: true };
     },
@@ -434,4 +545,15 @@ function ponerRuta(obj, ruta, valor) {
   let o = obj;
   for (let i = 0; i < partes.length - 1; i++) { o = o[partes[i]] = (o[partes[i]] && typeof o[partes[i]] === 'object') ? o[partes[i]] : {}; }
   o[partes[partes.length - 1]] = valor;
+}
+
+// Solo los campos visuales que se muestran junto al nombre (ranking, en línea, salas).
+function cosmeticos(id) {
+  const c = {};
+  if (!id) { return c; }
+  if (id.avatar) { c.avatar = String(id.avatar).slice(0, 8); }
+  if (id.color) { c.color = String(id.color).slice(0, 9); }
+  if (id.marco) { c.marco = String(id.marco).slice(0, 10); }
+  if (id.nivel) { c.nivel = Math.min(200, Math.max(1, Math.round(id.nivel))); }
+  return c;
 }

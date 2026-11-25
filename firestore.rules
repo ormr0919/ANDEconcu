@@ -18,15 +18,24 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.auth != null && request.auth.uid == uid
         && perfilValido(request.resource.data)
-        && request.resource.data.get('partidas', 0) == 0;
+        && request.resource.data.get('partidas', 0) in [0, 1];
       allow update: if request.auth != null && request.auth.uid == uid
         && perfilValido(request.resource.data)
         && request.resource.data.get('partidas', 0) - resource.data.get('partidas', 0) in [0, 1];
     }
 
     function perfilValido(d) {
-      return d.keys().hasOnly(['nombre', 'partidas', 'ultimo', 'creado', 'cats', 'puestos', 'mejorRacha', 'duelos'])
+      return d.keys().hasOnly(['nombre', 'partidas', 'ultimo', 'creado', 'cats', 'puestos', 'mejorRacha', 'duelos',
+                               'avatar', 'color', 'marco', 'frase', 'vitrina', 'insignias', 'nivel', 'xp', 'postula', 'privado'])
         && d.get('mejorRacha', 0) is int && d.get('mejorRacha', 0) <= 400
+        && d.get('avatar', '') is string && d.get('avatar', '').size() <= 8
+        && d.get('color', '') is string && d.get('color', '').size() <= 9
+        && d.get('marco', '') is string && d.get('marco', '').size() <= 10
+        && d.get('vitrina', []) is list && d.get('vitrina', []).size() <= 3
+        && d.get('insignias', []) is list && d.get('insignias', []).size() <= 60
+        && d.get('postula', []) is list && d.get('postula', []).size() <= 4
+        && d.get('nivel', 1) is int && d.get('nivel', 1) <= 200
+        && d.get('privado', false) is bool
         && nombreValido(d.nombre)
         && d.get('cats', {}) is map
         && d.get('cats', {}).keys().hasOnly(['fund', 'leyes', 'seg', 'med', 'pot', 'dist', 'com', 'est', 'xls', 'fp'])
@@ -54,6 +63,10 @@ service cloud.firestore {
           && filaValida(request.resource.data)
           && request.resource.data.partidas == resource.data.partidas + 1
           && request.resource.data.mejor >= resource.data.mejor;
+        // Cambio de nombre o de aspecto, sin tocar puntajes.
+        allow update: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre', 'avatar', 'color', 'marco', 'nivel'])
+          && nombreValido(request.resource.data.nombre);
       }
     }
 
@@ -80,8 +93,39 @@ service cloud.firestore {
       allow delete: if request.auth != null && request.auth.uid == resource.data.host;
     }
 
+    // Presencia: quién está en línea. Cada jugador solo escribe su propia señal.
+    match /presencia/{uid} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['nombre', 'puesto', 'ocupado', 'ultimo', 'desafios', 'avatar', 'color', 'marco', 'nivel'])
+        && nombreValido(request.resource.data.nombre)
+        && puestoValido(request.resource.data.puesto)
+        && request.resource.data.ocupado is bool
+        && request.resource.data.ultimo == request.time;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Invitaciones de desafío: solo las ven quien invita y quien recibe; solo puede cambiarse el estado.
+    match /invitaciones/{id} {
+      allow read: if request.auth != null
+        && (resource.data.para == request.auth.uid || resource.data.de == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.de == request.auth.uid
+        && request.resource.data.para != request.auth.uid
+        && request.resource.data.keys().hasOnly(['de', 'deNombre', 'para', 'paraNombre', 'puesto', 'codigo', 'estado', 'creado'])
+        && request.resource.data.estado == 'pendiente'
+        && nombreValido(request.resource.data.deNombre)
+        && puestoValido(request.resource.data.puesto)
+        && request.resource.data.codigo is string && request.resource.data.codigo.size() == 4
+        && request.resource.data.creado == request.time;
+      allow update: if request.auth != null
+        && (resource.data.para == request.auth.uid || resource.data.de == request.auth.uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado'])
+        && request.resource.data.estado in ['aceptada', 'rechazada', 'cancelada'];
+    }
+
     function filaValida(d) {
-      return d.keys().hasOnly(['nombre', 'mejor', 'partidas', 'aciertos', 'preguntas', 'racha', 'ultimo'])
+      return d.keys().hasOnly(['nombre', 'mejor', 'partidas', 'aciertos', 'preguntas', 'racha', 'ultimo', 'avatar', 'color', 'marco', 'nivel'])
         && d.get('racha', 0) is int && d.get('racha', 0) <= 15
         && nombreValido(d.nombre)
         && d.mejor is int && d.mejor >= 0 && d.mejor <= 6000
