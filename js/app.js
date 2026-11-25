@@ -3,13 +3,13 @@
  * Flujo: registro (una sola vez) → inicio → ruleta → pregunta → … → fin de partida.
  * Modos: clásico (con ranking), práctica por tema y repaso de errores.
  */
-import { CATEGORIAS, PUESTOS, puestoPorId } from './puestos.js';
-import { CPI_1 } from './preguntas-cpi-1.js';
-import { CPI_2 } from './preguntas-cpi-2.js';
-import { ING } from './preguntas-ing.js';
-import { EXTRA } from './preguntas-extra.js';
-import { citar } from './fuentes.js';
-import { crearRanking } from './ranking.js';
+import { CATEGORIAS, PUESTOS, puestoPorId } from './puestos.js?v=3b';
+import { CPI_1 } from './preguntas-cpi-1.js?v=3b';
+import { CPI_2 } from './preguntas-cpi-2.js?v=3b';
+import { ING } from './preguntas-ing.js?v=3b';
+import { EXTRA } from './preguntas-extra.js?v=3b';
+import { citar } from './fuentes.js?v=3b';
+import { crearRanking } from './ranking.js?v=3b';
 
 const TIEMPO = 45;        // segundos por pregunta en el modo clásico
 const MAX_PREG = 15;      // preguntas por partida
@@ -1382,6 +1382,79 @@ async function compartir() {
   window.open('https://wa.me/?text=' + encodeURIComponent(partida.compartir + ' ' + url), '_blank', 'noopener');
 }
 
+/* ---------------- Confirmar inscripción en el ranking en línea ---------------- */
+/*
+ * Jugadores que se registraron antes de activar el ranking en línea (o cuyo guardado falló):
+ * se les pide confirmar la inscripción y se suben sus récords y estadísticas guardados en el celular.
+ */
+const CATS_VALIDAS = ['fund', 'leyes', 'seg', 'med', 'pot', 'dist', 'com', 'est', 'xls', 'fp'];
+let inscripcionPend = null;
+async function revisarInscripcion() {
+  if (!ranking || !(ranking.modo === 'firebase' || ranking.prueba) || !jugador || !prog) { return; }
+  if (sessionStorage.getItem('andeJuego.inscripcionLuego')) { return; }
+  try {
+    const perfil = await ranking.leerPerfil();
+    const pendientes = [];
+    for (const pid of Object.keys(prog.puestos || {})) {
+      const pp = prog.puestos[pid];
+      if (!pp || !pp.partidas || !puestoPorId(pid)) { continue; }
+      const f = await ranking.leerFila(pid);
+      if (!f || (f.mejor || 0) < (pp.mejor || 0)) { pendientes.push({ pid: pid, mejor: pp.mejor || 0 }); }
+    }
+    const hayStats = Object.keys(prog.cats || {}).length > 0;
+    const faltanStats = hayStats && (!perfil || !perfil.cats);
+    if (perfil && !pendientes.length && !faltanStats) { return; }
+    inscripcionPend = { perfil: perfil, pendientes: pendientes, faltanStats: faltanStats };
+    mostrarInscripcion();
+  } catch (e) { console.warn('No se pudo revisar la inscripción:', e); }
+}
+function mostrarInscripcion() {
+  const d = $('m-inscripcion'), lista = $('ins-lista');
+  $('ins-nombre').value = jugador.nombre;
+  $('ins-error').hidden = true;
+  lista.innerHTML = '';
+  inscripcionPend.pendientes.forEach(function (x) {
+    const p = puestoPorId(x.pid);
+    lista.append(el('li', null, p.icono + ' ' + p.corto + ': récord de ' + miles(x.mejor) + ' puntos'));
+  });
+  if (inscripcionPend.faltanStats) { lista.append(el('li', null, '📊 Tus estadísticas por área y tu racha')); }
+  if (!lista.children.length) { lista.append(el('li', null, '👤 Tu perfil de jugador')); }
+  d.showModal();
+}
+async function confirmarInscripcion(ev) {
+  ev.preventDefault();
+  const n = $('ins-nombre').value.trim().replace(/\s+/g, ' ').slice(0, 24);
+  if (n.length < 2) { $('ins-error').textContent = 'El nombre tiene que tener al menos 2 letras.'; $('ins-error').hidden = false; return; }
+  const b = $('btn-ins-ok');
+  b.disabled = true; b.textContent = 'Subiendo tus puntajes…';
+  try {
+    jugador.nombre = n; guardarJugador();
+    await ranking.registrar(n);
+    if (inscripcionPend.faltanStats) {
+      const cats = {};
+      Object.keys(prog.cats).forEach(function (k) { if (CATS_VALIDAS.indexOf(k) !== -1) { cats[k] = { v: prog.cats[k].v || 0, a: prog.cats[k].a || 0 }; } });
+      await ranking.actualizarPerfil({ nombre: n, cats: cats, mejorRacha: Math.min(400, prog.mejorRacha || 0) });
+    }
+    for (const x of inscripcionPend.pendientes) {
+      const p = puestoPorId(x.pid);
+      let a = 0, v = 0;
+      p.cats.forEach(function (k) { const s = prog.cats[k]; if (s) { a += s.a || 0; v += s.v || 0; } });
+      await ranking.guardarPartida(n, x.pid, { puntos: x.mejor, aciertos: Math.min(a, v), preguntas: v, deltas: {}, racha: Math.min(15, prog.mejorRacha || 0), mejorRacha: Math.min(400, prog.mejorRacha || 0) });
+    }
+    $('m-inscripcion').close();
+    inscripcionPend = null;
+    confeti(120);
+    irInicio();
+    setTimeout(function () { alert('✅ ¡Listo, ' + n + '! Ya estás inscripto en el ranking en línea y tus puntajes quedaron guardados.'); }, 300);
+  } catch (e) {
+    console.error(e);
+    $('ins-error').textContent = 'No se pudo subir ahora (' + (e && e.code ? e.code : 'sin conexión') + '). Tus datos siguen guardados en el celular; probá de nuevo en un momento.';
+    $('ins-error').hidden = false;
+  } finally {
+    b.disabled = false; b.textContent = '✅ Confirmar inscripción';
+  }
+}
+
 /* ---------------- Arranque ---------------- */
 function enlazar() {
   $('btn-jugar').addEventListener('click', function () { iniciarPartida('clasico'); });
@@ -1393,6 +1466,8 @@ function enlazar() {
   $('btn-perfil-completo').addEventListener('click', miPerfil);
   $('btn-perfil-volver').addEventListener('click', function () { cerrarPerfil(); irInicio(); });
   $('btn-compartir').addEventListener('click', compartir);
+  $('f-inscripcion').addEventListener('submit', confirmarInscripcion);
+  $('btn-ins-luego').addEventListener('click', function () { sessionStorage.setItem('andeJuego.inscripcionLuego', '1'); $('m-inscripcion').close(); });
   // Duelo
   $('btn-duelo').addEventListener('click', abrirDuelo);
   $('btn-sim').addEventListener('click', iniciarSimulacro);
@@ -1510,6 +1585,7 @@ function prepararMovil() {
   if (jugador && jugador.idp && puestoPorId(jugador.puesto)) {
     if (!prog) { cargarProg(); }
     irInicio();
+    revisarInscripcion();
   } else {
     jugador = null;
     iniciarRegistro();

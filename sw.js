@@ -2,7 +2,7 @@
  * Service worker: guarda la app para jugar sin conexión.
  * Cambiá VERSION cada vez que publiques cambios para que los celulares descarguen la versión nueva.
  */
-const VERSION = 'camino-v3';
+const VERSION = 'camino-v3b';
 const ARCHIVOS = [
   './', './index.html', './manifest.webmanifest', './css/juego.css',
   './js/app.js', './js/puestos.js', './js/fuentes.js', './js/ranking.js', './js/firebase-config.js',
@@ -38,7 +38,9 @@ self.addEventListener('fetch', function (e) {
   }
   if (url.origin !== location.origin) { return; }
   // Archivos propios: primero la red (para tener siempre la última versión), y si no hay conexión, la copia guardada.
-  e.respondWith(fetch(req).then(function (res) {
+  // «no-cache» obliga a revisar con el servidor, así nunca se mezcla un archivo viejo con uno nuevo.
+  const red = req.mode === 'navigate' ? fetch(req) : fetch(req, { cache: 'no-cache' });
+  e.respondWith(red.then(function (res) {
     const copia = res.clone();
     caches.open(VERSION).then(function (c) { c.put(req, copia); });
     return res;

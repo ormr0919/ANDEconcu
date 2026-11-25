@@ -13,13 +13,16 @@
  * El perfil público solo guarda números agregados. Las recomendaciones personales
  * se calculan en el navegador de cada jugador y no se publican.
  */
-import { FIREBASE_CONFIG } from './firebase-config.js';
+import { FIREBASE_CONFIG } from './firebase-config.js?v=3b';
+
+// Con ?local=1 se usa el modo local aunque haya Firebase (para probar sin tocar la base real).
+const FORZAR_LOCAL = new URLSearchParams(location.search).has('local');
 
 const SDK = 'https://www.gstatic.com/firebasejs/11.0.2/';
 const TOP_N = 10;
 
 export async function crearRanking() {
-  if (FIREBASE_CONFIG) {
+  if (FIREBASE_CONFIG && !FORZAR_LOCAL) {
     try {
       return await rankingFirebase(FIREBASE_CONFIG);
     } catch (e) {
@@ -100,14 +103,15 @@ async function rankingFirebase(cfg) {
         const jd = j.exists() ? j.data() : {};
         const puestos = {};
         puestos[puesto] = { mejor: fila.mejor, partidas: fila.partidas };
-        tx.set(refJug, {
+        const datosJug = {
           nombre: nombre,
           partidas: (jd.partidas || 0) + 1,
           ultimo: F.serverTimestamp(),
           puestos: puestos,
-          mejorRacha: Math.max(jd.mejorRacha || 0, r.mejorRacha || 0),
-          cats: incrementos(r.deltas)
-        }, { merge: true });
+          mejorRacha: Math.max(jd.mejorRacha || 0, r.mejorRacha || 0)
+        };
+        if (Object.keys(r.deltas || {}).length) { datosJug.cats = incrementos(r.deltas); }
+        tx.set(refJug, datosJug, { merge: true });
         resultado = { record: r.puntos > (d.mejor || 0), mejorAnterior: d.mejor || 0 };
       });
       return resultado;
@@ -129,6 +133,22 @@ async function rankingFirebase(cfg) {
         }
         tx.set(ref, datos, { merge: true });
       });
+    },
+
+    // Para confirmar la inscripción y subir lo que quedó guardado solo en el celular.
+    async leerFila(puesto) {
+      const uid = await asegurarSesion();
+      const s = await F.getDoc(F.doc(db, 'puestos', puesto, 'ranking', uid));
+      return s.exists() ? s.data() : null;
+    },
+    async leerPerfil() {
+      const uid = await asegurarSesion();
+      const s = await F.getDoc(F.doc(db, 'jugadores', uid));
+      return s.exists() ? s.data() : null;
+    },
+    async actualizarPerfil(datos) {
+      const uid = await asegurarSesion();
+      await F.setDoc(F.doc(db, 'jugadores', uid), datos, { merge: true });
     },
 
     escucharTop(puesto, cb, orden) {
@@ -273,6 +293,7 @@ function rankingLocal() {
 
   return {
     modo: 'local',
+    prueba: FORZAR_LOCAL,
     async registrar(nombre) { const d = leer(); jugadorDe(d, nombre); escribir(d); return miId; },
     async cambiarJugador() { nuevoId(); },
 
@@ -313,6 +334,10 @@ function rankingLocal() {
       }
       escribir(d);
     },
+
+    async leerFila(puesto) { const p = leer().puestos[puesto]; return p && p.ranking[miId] ? p.ranking[miId] : null; },
+    async leerPerfil() { return leer().jugadores[miId] || null; },
+    async actualizarPerfil(datos) { const d = leer(); const j = jugadorDe(d, datos.nombre || 'Jugador'); Object.assign(j, datos); escribir(d); },
 
     escucharTop(puesto, cb, orden) {
       const campo = orden || 'mejor';

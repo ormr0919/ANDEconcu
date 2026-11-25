@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Unbounded:wght@600;700;800;900&display=swap">
-<link rel="stylesheet" href="css/juego.css">
+<link rel="stylesheet" href="css/juego.css?v=3b">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -418,9 +418,25 @@
   </form>
 </dialog>
 
+<!-- Confirmar inscripción en el ranking en línea -->
+<dialog class="modal" id="m-inscripcion">
+  <form class="modal-caja" id="f-inscripcion" autocomplete="off">
+    <h2>📣 Confirmá tu inscripción</h2>
+    <p>El ranking ya funciona en línea. Confirmá tu nombre y lo que jugaste en este celular se sube al top. <b>No perdés nada.</b></p>
+    <label class="campo" for="ins-nombre">Tu nombre en el ranking
+      <input id="ins-nombre" type="text" maxlength="24" minlength="2" required autocomplete="nickname">
+    </label>
+    <p class="ayuda">Se va a guardar en línea:</p>
+    <ul class="ins-lista" id="ins-lista"></ul>
+    <p class="error" id="ins-error" hidden></p>
+    <button class="btn grande primario" type="submit" id="btn-ins-ok">✅ Confirmar inscripción</button>
+    <button class="btn secundario" type="button" id="btn-ins-luego">Ahora no</button>
+  </form>
+</dialog>
+
 <canvas id="confeti" aria-hidden="true"></canvas>
 <div class="sin-red" id="sin-red" hidden>📴 Sin conexión: podés seguir practicando. El ranking y los duelos necesitan internet.</div>
 
-<script type="module" src="js/app.js"></script>
+<script type="module" src="js/app.js?v=3b"></script>
 </body>
 </html>

@@ -456,3 +456,8 @@ h2 { font-weight: 700; }
 .sello { display: inline-block; font-family: var(--f-titulo); font-weight: 900; font-size: 15px; letter-spacing: .1em; text-transform: uppercase; border: 3px solid currentColor; border-radius: 12px; padding: 6px 14px; margin: 12px 0 4px; transform: rotate(-3deg); }
 .sello.ok { color: var(--electrico); }
 .sello.no { color: var(--sol-3); }
+
+/* ---------- Confirmar inscripción ---------- */
+.ins-lista { margin: -4px 0 4px; padding-left: 20px; font-weight: 700; }
+.ins-lista li { margin: 4px 0; }
+#m-inscripcion p { margin: 0; }
