@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Camino a la libertad · Trivia de estudio</title>
+<meta name="description" content="Trivia para estudiar: Lector, Operador, Despachante e Ingeniero Electricista. Preguntas verificadas con las fuentes oficiales, ranking por puesto y duelos de estudio.">
+<meta name="theme-color" content="#0B0E2A">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230E1A2B'/%3E%3Cpath d='M18 4 8 18h7l-2 10 11-15h-7z' fill='%23F2A24E'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Unbounded:wght@600;700;800;900&display=swap">
+<link rel="stylesheet" href="css/juego.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Camino">
+<meta property="og:title" content="Camino a la libertad · Trivia de estudio">
+<meta property="og:description" content="Preguntas verificadas con fuentes oficiales, ranking por puesto y duelos de estudio.">
+<meta property="og:image" content="img/icono-512.png">
+</head>
+<body>
+
+<header class="barra">
+  <button class="marca" type="button" id="btn-marca" aria-label="Ir al inicio"><svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="lg-sol" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD166"/><stop offset=".5" stop-color="#FF9F43"/><stop offset="1" stop-color="#FF6B4A"/></linearGradient><clipPath id="lg-cielo"><rect x="0" y="0" width="48" height="29"/></clipPath></defs><rect width="48" height="48" rx="13" fill="#17123F"/><g stroke="#FFD166" stroke-width="2" stroke-linecap="round" opacity=".85"><line x1="24" y1="8" x2="24" y2="11"/><line x1="12.5" y1="12.5" x2="14.6" y2="14.6"/><line x1="35.5" y1="12.5" x2="33.4" y2="14.6"/><line x1="7" y1="24" x2="10" y2="24"/><line x1="41" y1="24" x2="38" y2="24"/></g><circle cx="24" cy="29" r="11" fill="url(#lg-sol)" clip-path="url(#lg-cielo)"/><path d="M22.6 29h2.8L36 44H12z" fill="#2C2463"/><path d="M24 31v3M24 37v3" stroke="#3BE8C4" stroke-width="1.8" stroke-linecap="round"/><line x1="5" y1="29" x2="43" y2="29" stroke="#FFF8EF" stroke-opacity=".35" stroke-width="1.2"/></svg><span class="marca-txt"><b>Camino a la <em>libertad</em></b><span>Trivia de estudio</span></span></button>
+  <div class="barra-der">
+    <button class="icono-btn" type="button" id="btn-sonido" aria-label="Silenciar sonidos" title="Sonido">🔊</button>
+  </div>
+</header>
+
+<main class="app" id="app">
+
+  <!-- Cargando -->
+  <section class="pantalla" id="p-carga">
+    <div class="carga"><div class="rayo">☀️</div><p>Preparando el camino…</p></div>
+  </section>
+
+  <!-- Registro: solo la primera vez -->
+  <section class="pantalla" id="p-registro" hidden>
+    <div class="hero">
+      <svg class="escena" viewBox="0 0 360 210" role="img" aria-label="Un camino que va hacia el amanecer, entre torres de transmisión eléctrica">
+        <defs>
+          <linearGradient id="es-sol" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFD166"/><stop offset=".6" stop-color="#FF9F43"/><stop offset="1" stop-color="#FF6B4A"/></linearGradient>
+          <radialGradient id="es-brillo" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#FF9F43" stop-opacity=".55"/><stop offset="1" stop-color="#FF9F43" stop-opacity="0"/></radialGradient>
+          <linearGradient id="es-suelo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#241B55"/><stop offset="1" stop-color="#0E0B2A"/></linearGradient>
+          <linearGradient id="es-ruta" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5A4A9E"/><stop offset="1" stop-color="#2C2463"/></linearGradient>
+          <clipPath id="es-cielo"><rect x="0" y="0" width="360" height="140"/></clipPath>
+        </defs>
+        <ellipse cx="180" cy="140" rx="170" ry="70" fill="url(#es-brillo)"/>
+        <g class="sol" clip-path="url(#es-cielo)">
+          <g stroke="#FFD166" stroke-width="3" stroke-linecap="round" opacity=".55">
+            <line x1="180" y1="58" x2="180" y2="70"/><line x1="128" y1="80" x2="137" y2="88"/><line x1="232" y1="80" x2="223" y2="88"/>
+            <line x1="104" y1="118" x2="116" y2="120"/><line x1="256" y1="118" x2="244" y2="120"/>
+          </g>
+          <circle cx="180" cy="140" r="52" fill="url(#es-sol)"/>
+        </g>
+        <path d="M0 140h360v70H0z" fill="url(#es-suelo)"/>
+        <line x1="0" y1="140" x2="360" y2="140" stroke="#FFF8EF" stroke-opacity=".3"/>
+        <path d="M174 140h12l104 70H70z" fill="url(#es-ruta)"/>
+        <path d="M180 144v8M180 160v12M180 182v16" stroke="#3BE8C4" stroke-width="3" stroke-linecap="round"/>
+        <g fill="none" stroke="#9D95D6" stroke-width="2" stroke-linejoin="round">
+          <path d="M56 196 70 92 84 196M60 166h20M63 140h14M66 116h8M50 104h40M54 94h32"/>
+          <path d="M276 196 290 92 304 196M280 166h20M283 140h14M286 116h8M270 104h40M274 94h32"/>
+          <path d="M122 156 128 112 134 156M124 140h8M118 118h20M120 113h16"/>
+          <path d="M226 156 232 112 238 156M228 140h8M222 118h20M224 113h16"/>
+        </g>
+        <g fill="none" stroke="#9D95D6" stroke-opacity=".55" stroke-width="1.4">
+          <path d="M50 104Q90 128 118 118"/><path d="M90 104Q110 122 138 118"/>
+          <path d="M242 118Q270 128 310 104"/><path d="M222 118Q248 124 270 104"/>
+          <path d="M138 118Q160 126 174 136"/><path d="M222 118Q200 126 186 136"/>
+        </g>
+        <circle class="chispa" cx="96" cy="117" r="3" fill="#3BE8C4"/>
+        <circle class="chispa b" cx="262" cy="119" r="3" fill="#3BE8C4"/>
+        <circle class="chispa" cx="160" cy="125" r="2.4" fill="#FFD166"/>
+      </svg>
+      <h1>Camino a la <em>libertad</em></h1>
+      <p class="hero-sub">La trivia para prepararte, con preguntas verificadas en las fuentes oficiales.</p>
+    </div>
+    <form class="tarjeta" id="f-registro" autocomplete="off">
+      <label class="campo" for="r-nombre">¿Quién está jugando?
+        <input id="r-nombre" type="text" maxlength="24" minlength="2" required placeholder="Tu nombre o apodo" autocomplete="nickname">
+        <span class="ayuda">Así vas a aparecer en el ranking.</span>
+      </label>
+      <fieldset class="campo">
+        <legend>¿Para qué puesto te preparás?</legend>
+        <div class="puestos" id="r-puestos"></div>
+        <span class="ayuda">Si postulaste a varios, elegí uno: lo podés cambiar cuando quieras.</span>
+      </fieldset>
+      <button class="btn grande primario" type="submit" id="r-enviar" disabled>¡A jugar!</button>
+    </form>
+  </section>
+
+  <!-- Inicio -->
+  <section class="pantalla" id="p-inicio" hidden>
+    <div class="saludo">
+      <button class="avatar-btn" type="button" id="btn-mi-perfil" aria-label="Ver mi perfil">
+        <span class="avatar" id="i-avatar"></span>
+      </button>
+      <div class="saludo-txt">
+        <p class="hola">Hola, <b id="i-nombre"></b> <span class="racha-dia" id="i-racha"></span></p>
+        <button class="puesto-chip" type="button" id="i-puesto"></button>
+      </div>
+      <div class="mini-stats">
+        <div><b id="i-partidas">0</b><span>partidas</span></div>
+        <div><b id="i-mejor">0</b><span>récord</span></div>
+      </div>
+    </div>
+
+    <p class="aviso" id="i-examen"></p>
+
+    <button class="btn enorme primario" type="button" id="btn-jugar">
+      <span class="btn-icono">🎡</span><span>Jugar<small>Partida con ranking</small></span>
+    </button>
+    <button class="btn grande secundario entreno" type="button" id="btn-entreno">
+      <span class="btn-icono">🧠</span><span>Entrenamiento personalizado<small id="i-entreno">10 preguntas de lo que más te falta</small></span>
+    </button>
+    <button class="btn grande secundario duelo-btn" type="button" id="btn-duelo">
+      <span class="btn-icono">⚔️</span><span>Duelo de estudio<small>De 2 a 4 personas, cada una en su celular</small></span>
+    </button>
+    <div class="fila-btn">
+      <button class="btn secundario" type="button" id="btn-repaso">
+        <span class="btn-icono">🔁</span><span>Repasar errores<small id="i-pendientes">Sin pendientes</small></span>
+      </button>
+      <button class="btn secundario" type="button" id="btn-practica">
+        <span class="btn-icono">🎯</span><span>Practicar un tema<small>Sin reloj ni ranking</small></span>
+      </button>
+    </div>
+
+    <section class="tarjeta">
+      <div class="tit-fila">
+        <h2>🏆 Top <span id="t-puesto"></span></h2>
+        <span class="vivo" id="t-vivo">en vivo</span>
+      </div>
+      <div class="tabs chico" id="t-orden" role="tablist">
+        <button class="tab" type="button" role="tab" data-o="mejor" aria-selected="true">Puntaje</button>
+        <button class="tab" type="button" role="tab" data-o="racha" aria-selected="false">🔥 Racha sin errores</button>
+      </div>
+      <ol class="top" id="t-lista"><li class="vacio">Cargando…</li></ol>
+      <p class="pie-top" id="t-totales"></p>
+      <button class="link" type="button" id="btn-ranking">Ver los tops de todos los puestos</button>
+    </section>
+
+    <section class="tarjeta">
+      <div class="tit-fila">
+        <h2>📈 Tu dominio por área</h2>
+        <button class="link" type="button" id="btn-perfil-completo">Ver perfil</button>
+      </div>
+      <div class="leyenda" aria-hidden="true"><span class="lv alto">Dominado ≥ 80 %</span><span class="lv medio">En camino 60–79 %</span><span class="lv bajo">A reforzar &lt; 60 %</span></div>
+      <div class="dominio" id="d-lista"></div>
+      <div class="consejo" id="d-consejo" hidden></div>
+    </section>
+
+    <div class="instalar" id="i-instalar" hidden>
+      <span>📲 Instalá «Camino a la libertad» en tu celular para abrirlo como una app y jugar sin conexión.</span>
+      <button class="btn primario" type="button" id="btn-instalar">Instalar</button>
+    </div>
+    <p class="instalar" id="i-instalar-ios" hidden>📲 En iPhone: tocá <b>Compartir</b> y después <b>«Agregar a inicio»</b> para tenerlo como app.</p>
+
+    <p class="pie">
+      <span id="pie-modo"></span>
+      <button class="link" type="button" id="btn-cambiar-jugador">¿No sos <span id="pie-nombre"></span>? Cambiar jugador</button>
+    </p>
+  </section>
+
+  <!-- Perfil (propio o de otra persona) -->
+  <section class="pantalla" id="p-perfil" hidden>
+    <button class="volver" type="button" id="btn-perfil-volver">← Volver</button>
+    <div class="perfil-cab">
+      <span class="avatar grande" id="pf-avatar"></span>
+      <div>
+        <h1 id="pf-nombre"></h1>
+        <p class="pf-sub" id="pf-sub"></p>
+      </div>
+    </div>
+    <div class="pf-stats" id="pf-stats"></div>
+
+    <section class="tarjeta">
+      <h2>🏆 Récords por puesto</h2>
+      <div class="pf-puestos" id="pf-puestos"></div>
+    </section>
+
+    <section class="tarjeta">
+      <h2>📊 Dominio por área</h2>
+      <div class="leyenda" aria-hidden="true"><span class="lv alto">Dominado ≥ 80 %</span><span class="lv medio">En camino 60–79 %</span><span class="lv bajo">A reforzar &lt; 60 %</span><span class="lv nuevo">Menos de 5 respuestas</span></div>
+      <div class="dominio" id="pf-areas"></div>
+    </section>
+
+    <section class="tarjeta" id="pf-memoria" hidden>
+      <h2>💾 Tu progreso</h2>
+      <p id="pm-texto"></p>
+    </section>
+
+    <section class="tarjeta privado" id="pf-privado" hidden>
+      <div class="tit-fila">
+        <h2>🎯 Tu plan de refuerzo</h2>
+        <span class="candado">🔒 Solo lo ves vos</span>
+      </div>
+      <p class="ayuda">Ordenado por lo que más te conviene estudiar: áreas con menos aciertos, preguntas que todavía no viste y errores pendientes.</p>
+      <ol class="plan" id="pf-plan"></ol>
+      <button class="btn grande primario" type="button" id="btn-pf-entreno">🧠 Empezar entrenamiento personalizado</button>
+    </section>
+  </section>
+
+  <!-- Duelo: menú -->
+  <section class="pantalla" id="p-duelo" hidden>
+    <button class="volver" type="button" data-volver>← Volver</button>
+    <div class="hero chico">
+      <div class="hero-rayo" aria-hidden="true">⚔️</div>
+      <h1>Duelo de estudio</h1>
+      <p class="hero-sub">Responden las mismas preguntas al mismo tiempo. Quien acierta le explica a quien se equivocó.</p>
+    </div>
+    <section class="tarjeta">
+      <h2>Crear una sala</h2>
+      <p class="ayuda" id="dm-puesto"></p>
+      <button class="btn grande primario" type="button" id="btn-crear-sala">Crear sala</button>
+    </section>
+    <form class="tarjeta" id="f-unirse" autocomplete="off">
+      <h2>Unirme con un código</h2>
+      <label class="campo" for="dm-codigo">Código de 4 letras
+        <input id="dm-codigo" type="text" maxlength="4" minlength="4" required inputmode="text" autocapitalize="characters" placeholder="Ej.: K7QM" class="codigo-input">
+      </label>
+      <p class="error" id="dm-error" hidden></p>
+      <button class="btn grande secundario" type="submit">Unirme</button>
+    </form>
+    <p class="pie" id="dm-modo"></p>
+  </section>
+
+  <!-- Duelo: sala de espera -->
+  <section class="pantalla" id="p-sala" hidden>
+    <button class="volver" type="button" id="btn-sala-salir">← Salir de la sala</button>
+    <div class="sala-codigo">
+      <span>Código de la sala</span>
+      <b id="ds-codigo">····</b>
+      <button class="btn secundario" type="button" id="btn-sala-compartir">📲 Invitar por WhatsApp</button>
+    </div>
+    <p class="aviso" id="ds-puesto"></p>
+    <section class="tarjeta">
+      <h2>Jugadores <span id="ds-cuenta"></span></h2>
+      <ul class="sala-jug" id="ds-jugadores"></ul>
+    </section>
+    <button class="btn grande primario" type="button" id="btn-sala-empezar" hidden>¡Empezar duelo!</button>
+    <p class="ruleta-msg" id="ds-espera"></p>
+  </section>
+
+  <!-- Duelo: pregunta y revelación -->
+  <section class="pantalla" id="p-dpreg" hidden>
+    <div class="marcador" id="dp-marcador"></div>
+    <div class="cat-banda" id="dp-cat"></div>
+    <div class="reloj" id="dp-reloj" aria-hidden="true"><div class="reloj-barra" id="dp-barra"></div></div>
+    <div class="tarjeta pregunta"><h2 class="q-texto" id="dp-texto"></h2></div>
+    <div class="opciones" id="dp-opciones"></div>
+    <div class="estado-jug" id="dp-estado"></div>
+    <div class="feedback" id="dp-revela" hidden aria-live="polite">
+      <p class="fb-titulo" id="dp-titulo"></p>
+      <div class="explica" id="dp-explica"></div>
+      <ul class="resultados" id="dp-resultados"></ul>
+      <p class="fb-exp" id="dp-exp"></p>
+      <p class="fb-fuente" id="dp-fuente"></p>
+      <button class="btn grande primario" type="button" id="btn-dp-sig" hidden>Siguiente pregunta</button>
+      <p class="ruleta-msg chico" id="dp-esperando" hidden></p>
+    </div>
+  </section>
+
+  <!-- Duelo: resultado -->
+  <section class="pantalla" id="p-dfin" hidden>
+    <div class="fin-hero">
+      <p class="fin-emoji">🏆</p>
+      <h1 id="df-titulo">¡Duelo terminado!</h1>
+    </div>
+    <ol class="podio" id="df-podio"></ol>
+    <section class="tarjeta" id="df-repaso-caja">
+      <h2>🧑‍🏫 Para repasar juntos</h2>
+      <p class="ayuda">Las preguntas en las que alguien se equivocó, con quién le explica a quién.</p>
+      <ol class="errores" id="df-repaso"></ol>
+    </section>
+    <div class="fila-btn">
+      <button class="btn grande primario" type="button" id="btn-df-otro">Otro duelo</button>
+      <button class="btn grande secundario" type="button" id="btn-df-inicio">Inicio</button>
+    </div>
+  </section>
+
+  <!-- Ruleta -->
+  <section class="pantalla" id="p-ruleta" hidden>
+    <div class="marcador" id="m-ruleta"></div>
+    <div class="camino" id="c-ruleta" aria-hidden="true"></div>
+    <div class="medallas" id="medallas-ruleta"></div>
+    <div class="ruleta-caja">
+      <div class="puntero" aria-hidden="true"></div>
+      <svg class="ruleta" id="ruleta" viewBox="-110 -110 220 220" aria-hidden="true"></svg>
+      <button class="ruleta-centro" type="button" id="btn-girar">GIRAR</button>
+    </div>
+    <p class="ruleta-msg" id="ruleta-msg">Tocá GIRAR para sortear la categoría</p>
+    <div class="corona" id="corona" hidden>
+      <p>👑 <b>¡Corona!</b> Elegí la categoría de la próxima pregunta</p>
+      <div class="corona-ops" id="corona-ops"></div>
+    </div>
+  </section>
+
+  <!-- Pregunta -->
+  <section class="pantalla" id="p-pregunta" hidden>
+    <div class="marcador" id="m-pregunta"></div>
+    <div class="camino" id="c-pregunta" aria-hidden="true"></div>
+    <div class="cat-banda" id="q-cat"></div>
+    <div class="reloj" id="q-reloj" aria-hidden="true"><div class="reloj-barra" id="q-barra"></div></div>
+    <div class="tarjeta pregunta">
+      <p class="q-meta" id="q-meta"></p>
+      <h2 class="q-texto" id="q-texto"></h2>
+    </div>
+    <div class="opciones" id="q-opciones"></div>
+    <div class="feedback" id="q-feedback" hidden aria-live="polite">
+      <p class="fb-titulo" id="fb-titulo"></p>
+      <p class="fb-exp" id="fb-exp"></p>
+      <p class="fb-fuente" id="fb-fuente"></p>
+      <button class="btn grande primario" type="button" id="btn-seguir">Seguir</button>
+    </div>
+  </section>
+
+  <!-- Fin -->
+  <section class="pantalla" id="p-fin" hidden>
+    <div class="fin-hero">
+      <p class="fin-emoji" id="f-emoji">🏁</p>
+      <h1 id="f-titulo">¡Partida terminada!</h1>
+      <p class="fin-puntos"><b id="f-puntos">0</b> puntos</p>
+      <p class="fin-sub" id="f-sub"></p>
+      <p class="fin-record" id="f-record" hidden></p>
+      <p class="fin-racha" id="f-racha"></p>
+    </div>
+    <div class="medallas grandes" id="f-medallas"></div>
+    <button class="btn grande compartir" type="button" id="btn-compartir" hidden>📲 Compartir mi resultado</button>
+    <section class="tarjeta" id="f-errores-caja">
+      <h2>📝 Para repasar</h2>
+      <p class="ayuda">Estas preguntas quedaron guardadas en «Repasar errores». Salen de tu lista cuando las respondés bien dos veces seguidas.</p>
+      <ol class="errores" id="f-errores"></ol>
+    </section>
+    <div class="fila-btn">
+      <button class="btn grande primario" type="button" id="btn-otra">Jugar otra</button>
+      <button class="btn grande secundario" type="button" id="btn-volver">Inicio</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- Elegir puesto -->
+<dialog class="modal" id="m-puesto">
+  <form method="dialog" class="modal-caja">
+    <h2>Elegí el puesto</h2>
+    <p class="ayuda">Tus récords y tu ranking se guardan por puesto.</p>
+    <div class="puestos" id="mp-puestos"></div>
+    <button class="btn secundario" value="cancelar">Cerrar</button>
+  </form>
+</dialog>
+
+<!-- Elegir tema para práctica -->
+<dialog class="modal" id="m-tema">
+  <form method="dialog" class="modal-caja">
+    <h2>¿Qué tema querés practicar?</h2>
+    <p class="ayuda">10 preguntas, sin reloj y sin ranking. Ideal para reforzar tu tema más flojo.</p>
+    <div class="temas" id="mt-temas"></div>
+    <button class="btn secundario" value="cancelar">Cerrar</button>
+  </form>
+</dialog>
+
+<!-- Ranking de todos los puestos -->
+<dialog class="modal" id="m-ranking">
+  <form method="dialog" class="modal-caja">
+    <h2>🏆 Tops por puesto</h2>
+    <div class="tabs" id="mr-tabs" role="tablist"></div>
+    <ol class="top" id="mr-lista"></ol>
+    <p class="pie-top" id="mr-totales"></p>
+    <button class="btn secundario" value="cancelar">Cerrar</button>
+  </form>
+</dialog>
+
+<canvas id="confeti" aria-hidden="true"></canvas>
+<div class="sin-red" id="sin-red" hidden>📴 Sin conexión: podés seguir practicando. El ranking y los duelos necesitan internet.</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

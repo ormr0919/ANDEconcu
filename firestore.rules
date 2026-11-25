@@ -1,0 +1,93 @@
+rules_version = '2';
+
+// Reglas de seguridad para el ranking del juego.
+// Cualquiera puede leer los tops; cada jugador (sesión anónima) solo puede escribir su propia fila,
+// sumando de a una partida, con un puntaje dentro del máximo posible del juego.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function nombreValido(n) {
+      return n is string && n.size() >= 2 && n.size() <= 24;
+    }
+    function puestoValido(p) {
+      return p in ['lector', 'operador', 'despachante', 'ingeniero'];
+    }
+
+    // Perfil público: solo números agregados (respuestas y aciertos por área, récords por puesto).
+    match /jugadores/{uid} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && perfilValido(request.resource.data)
+        && request.resource.data.get('partidas', 0) == 0;
+      allow update: if request.auth != null && request.auth.uid == uid
+        && perfilValido(request.resource.data)
+        && request.resource.data.get('partidas', 0) - resource.data.get('partidas', 0) in [0, 1];
+    }
+
+    function perfilValido(d) {
+      return d.keys().hasOnly(['nombre', 'partidas', 'ultimo', 'creado', 'cats', 'puestos', 'mejorRacha', 'duelos'])
+        && d.get('mejorRacha', 0) is int && d.get('mejorRacha', 0) <= 400
+        && nombreValido(d.nombre)
+        && d.get('cats', {}) is map
+        && d.get('cats', {}).keys().hasOnly(['fund', 'leyes', 'seg', 'med', 'pot', 'dist', 'com', 'est', 'xls', 'fp'])
+        && d.get('puestos', {}) is map
+        && d.get('puestos', {}).keys().hasOnly(['lector', 'operador', 'despachante', 'ingeniero']);
+    }
+
+    match /puestos/{puesto} {
+      allow read: if true;
+      allow create: if request.auth != null && puestoValido(puesto)
+        && request.resource.data.keys().hasOnly(['partidas', 'jugadores'])
+        && request.resource.data.partidas == 1
+        && request.resource.data.jugadores in [0, 1];
+      allow update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['partidas', 'jugadores'])
+        && request.resource.data.partidas == resource.data.partidas + 1
+        && request.resource.data.jugadores - resource.data.jugadores in [0, 1];
+
+      match /ranking/{uid} {
+        allow read: if true;
+        allow create: if request.auth != null && request.auth.uid == uid && puestoValido(puesto)
+          && filaValida(request.resource.data)
+          && request.resource.data.partidas == 1;
+        allow update: if request.auth != null && request.auth.uid == uid
+          && filaValida(request.resource.data)
+          && request.resource.data.partidas == resource.data.partidas + 1
+          && request.resource.data.mejor >= resource.data.mejor;
+      }
+    }
+
+    // Progreso privado de cada jugador (errores pendientes, estadísticas, rachas): solo lo lee y escribe su dueño.
+    match /progreso/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Salas de duelo: cualquiera con sesión puede leerlas (necesita el código);
+    // el anfitrión maneja el avance y los demás solo pueden unirse y responder.
+    match /salas/{codigo} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.host == request.auth.uid
+        && puestoValido(request.resource.data.puesto)
+        && request.resource.data.preguntas is list && request.resource.data.preguntas.size() <= 15
+        && request.resource.data.jugadores.size() == 1;
+      allow update: if request.auth != null
+        && request.resource.data.host == resource.data.host
+        && request.resource.data.preguntas == resource.data.preguntas
+        && request.resource.data.jugadores.size() <= 4
+        && (request.auth.uid == resource.data.host
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['jugadores', 'respuestas']));
+      allow delete: if request.auth != null && request.auth.uid == resource.data.host;
+    }
+
+    function filaValida(d) {
+      return d.keys().hasOnly(['nombre', 'mejor', 'partidas', 'aciertos', 'preguntas', 'racha', 'ultimo'])
+        && d.get('racha', 0) is int && d.get('racha', 0) <= 15
+        && nombreValido(d.nombre)
+        && d.mejor is int && d.mejor >= 0 && d.mejor <= 6000
+        && d.partidas is int && d.aciertos is int && d.preguntas is int
+        && d.aciertos <= d.preguntas
+        && d.ultimo == request.time;
+    }
+  }
+}
