@@ -13,7 +13,7 @@ import { CPI3 } from './preguntas-cpi3.js?v=5';
 import { figuraHtml } from './figuras.js?v=5';
 import { FIG_BANCO } from './figuras-banco.js?v=5';
 import { citar } from './fuentes.js?v=5';
-import { crearRanking, EN_LINEA_SEG, MAX_GRUPO, semanaActual } from './ranking.js?v=5';
+import { crearRanking, EN_LINEA_SEG, MAX_GRUPO, semanaActual } from './ranking.js?v=5.1';
 import { contexto, nivelDe, xpParaNivel, NIVEL_MAX, AVATARES, COLORES, MARCOS, FRASES, INSIGNIAS, insigniaPorId, avatarDisponible, colorDisponible } from './perfil.js?v=5';
 
 const TIEMPO = 45;        // segundos por pregunta en el modo clásico

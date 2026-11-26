@@ -214,8 +214,10 @@ async function rankingFirebase(cfg) {
       return r.data().count;
     },
     async listarJugadores() {
-      const snap = await F.getDocs(F.query(F.collection(db, 'jugadores'), F.orderBy('ultimo', 'desc'), F.limit(500)));
-      return snap.docs.map(function (d) { const x = d.data(); return Object.assign({ id: d.id }, x, { ultimo: x.ultimo && x.ultimo.toMillis ? x.ultimo.toMillis() : null }); });
+      // Sin orderBy: así también aparecen quienes todavía no tienen fecha de última actividad.
+      const snap = await F.getDocs(F.query(F.collection(db, 'jugadores'), F.limit(1000)));
+      return snap.docs.map(function (d) { const x = d.data(); return Object.assign({ id: d.id }, x, { ultimo: x.ultimo && x.ultimo.toMillis ? x.ultimo.toMillis() : null }); })
+        .sort(function (a, b) { return (b.ultimo || 0) - (a.ultimo || 0); });
     },
     async leerPerfilDe(id) {
       const s = await F.getDoc(F.doc(db, 'jugadores', id));

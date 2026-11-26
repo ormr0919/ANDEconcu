@@ -2,7 +2,7 @@
  * Service worker: guarda la app para jugar sin conexión.
  * Cambiá VERSION cada vez que publiques cambios para que los celulares descarguen la versión nueva.
  */
-const VERSION = 'camino-v5.1';
+const VERSION = 'camino-v5.2';
 const ARCHIVOS = [
   './', './index.html', './manifest.webmanifest', './css/juego.css',
   './js/app.js', './js/puestos.js', './js/fuentes.js', './js/ranking.js', './js/firebase-config.js',
