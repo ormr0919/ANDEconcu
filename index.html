@@ -34,7 +34,9 @@
 
   <!-- Cargando -->
   <section class="pantalla" id="p-carga">
-    <div class="carga"><div class="rayo">☀️</div><p>Preparando el camino…</p></div>
+    <div class="carga"><div class="rayo">☀️</div><p>Preparando el camino…</p>
+      <p class="carga-lenta" id="carga-lenta" hidden>Está tardando más de lo normal. Revisá tu conexión y <button class="btn primario" type="button" onclick="location.reload()">Reintentar</button></p>
+    </div>
   </section>
 
   <!-- Registro: solo la primera vez -->
@@ -681,5 +683,9 @@
 <div class="sin-red" id="sin-red" hidden>📴 Sin conexión: podés seguir practicando. El ranking y los duelos necesitan internet.</div>
 
 <script type="module" src="js/app.js?v=5"></script>
+<script>
+  // Si algún archivo no carga (por ejemplo, un corte de la red), se ofrece reintentar en vez de quedar en «Preparando…».
+  setTimeout(function () { var c = document.getElementById('p-carga'); if (c && !c.hidden) { document.getElementById('carga-lenta').hidden = false; } }, 9000);
+</script>
 </body>
 </html>
