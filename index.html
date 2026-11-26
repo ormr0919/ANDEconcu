@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Unbounded:wght@600;700;800;900&display=swap">
-<link rel="stylesheet" href="css/juego.css?v=4">
+<link rel="stylesheet" href="css/juego.css?v=5">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -122,7 +122,7 @@
     <p class="aviso" id="i-examen"></p>
 
     <button class="btn enorme primario" type="button" id="btn-jugar">
-      <span class="btn-icono">🎡</span><span>Jugar<small>Partida con ranking</small></span>
+      <span class="btn-icono">🎡</span><span>Jugar<small id="i-jugar-sub">Partida con ranking</small></span>
     </button>
     <button class="btn grande secundario sim-btn" type="button" id="btn-sim">
       <span class="btn-icono">📝</span><span>Simulacro de examen<small id="i-sim">Como el examen real</small></span>
@@ -131,7 +131,7 @@
       <span class="btn-icono">🧠</span><span>Entrenamiento personalizado<small id="i-entreno">10 preguntas de lo que más te falta</small></span>
     </button>
     <button class="btn grande secundario duelo-btn" type="button" id="btn-duelo">
-      <span class="btn-icono">⚔️</span><span>Duelo de estudio<small>De 2 a 4 personas, cada una en su celular</small></span>
+      <span class="btn-icono">⚔️</span><span>Duelos y grupos<small>De 2 a 10 personas, cada una en su celular</small></span>
     </button>
     <div class="fila-btn">
       <button class="btn secundario" type="button" id="btn-repaso">
@@ -150,6 +150,12 @@
       <p class="pie-top" id="linea-pie"></p>
     </section>
 
+    <button class="jugadores-btn" type="button" id="btn-jugadores">
+      <span class="jb-avs" id="jb-avs" aria-hidden="true"></span>
+      <span class="jb-txt"><b id="jb-total">…</b><small id="jb-sub">personas inscriptas · ver quiénes son</small></span>
+      <span class="jb-flecha" aria-hidden="true">›</span>
+    </button>
+
     <section class="tarjeta">
       <div class="tit-fila">
         <h2>🏆 Top <span id="t-puesto"></span></h2>
@@ -157,7 +163,8 @@
       </div>
       <div class="tabs chico" id="t-orden" role="tablist">
         <button class="tab" type="button" role="tab" data-o="mejor" aria-selected="true">Puntaje</button>
-        <button class="tab" type="button" role="tab" data-o="racha" aria-selected="false">🔥 Racha sin errores</button>
+        <button class="tab" type="button" role="tab" data-o="semana" aria-selected="false">📅 Semana</button>
+        <button class="tab" type="button" role="tab" data-o="racha" aria-selected="false">🔥 Racha</button>
       </div>
       <ol class="top" id="t-lista"><li class="vacio">Cargando…</li></ol>
       <p class="pie-top" id="t-totales"></p>
@@ -307,6 +314,7 @@
     <div class="tarjeta pregunta">
       <p class="q-meta" id="s-meta"></p>
       <h2 class="q-texto" id="s-texto"></h2>
+      <div class="figura" id="s-fig" hidden></div>
     </div>
     <div class="opciones" id="s-opciones"></div>
     <button class="btn grande primario sim-sig" type="button" id="btn-s-sig" disabled>Siguiente →</button>
@@ -339,18 +347,23 @@
     </div>
   </section>
 
-  <!-- Duelo: menú -->
+  <!-- Grupo de estudio: menú -->
   <section class="pantalla" id="p-duelo" hidden>
     <button class="volver" type="button" data-volver>← Volver</button>
     <div class="hero chico">
       <div class="hero-rayo" aria-hidden="true">⚔️</div>
-      <h1>Duelo de estudio</h1>
-      <p class="hero-sub">Responden las mismas preguntas al mismo tiempo. Quien acierta le explica a quien se equivocó.</p>
+      <h1>Duelos y grupos</h1>
+      <p class="hero-sub">De 2 a 10 personas. Responden las mismas preguntas y, al revelar, quien acertó le explica a quien se equivocó.</p>
     </div>
     <section class="tarjeta">
-      <h2>Crear una sala</h2>
+      <h2>Crear un grupo</h2>
       <p class="ayuda" id="dm-puesto"></p>
-      <button class="btn grande primario" type="button" id="btn-crear-sala">Crear sala</button>
+      <button class="btn grande primario" type="button" id="btn-crear-sala">Crear grupo</button>
+    </section>
+    <section class="tarjeta" id="dm-grupos-caja" hidden>
+      <h2>💾 Mis grupos</h2>
+      <p class="ayuda">Tocá «Invitar a todos» y les llega la invitación a quienes estén en línea.</p>
+      <ul class="mis-grupos" id="dm-grupos"></ul>
     </section>
     <form class="tarjeta" id="f-unirse" autocomplete="off">
       <h2>Unirme con un código</h2>
@@ -363,59 +376,97 @@
     <p class="pie" id="dm-modo"></p>
   </section>
 
-  <!-- Duelo: sala de espera -->
+  <!-- Grupo: sala (antes de empezar y entre rondas) -->
   <section class="pantalla" id="p-sala" hidden>
-    <button class="volver" type="button" id="btn-sala-salir">← Salir de la sala</button>
+    <button class="volver" type="button" id="btn-sala-salir">🚪 Salir del grupo</button>
     <div class="sala-codigo">
-      <span>Código de la sala</span>
+      <span>Código del grupo</span>
       <b id="ds-codigo">····</b>
-      <button class="btn secundario" type="button" id="btn-sala-compartir">📲 Invitar por WhatsApp</button>
+      <div class="fila-btn">
+        <button class="btn secundario" type="button" id="btn-sala-compartir">📲 Link por WhatsApp</button>
+        <button class="btn secundario" type="button" id="btn-sala-invitar">➕ Invitar en línea</button>
+      </div>
     </div>
-    <p class="aviso" id="ds-puesto"></p>
+    <div class="aviso invitados" id="ds-invitado" hidden></div>
+    <section class="tarjeta" id="ds-invitar-caja" hidden>
+      <div class="tit-fila"><h2>➕ Invitar a quien está en línea</h2><button class="link" type="button" id="btn-invitar-cerrar">Cerrar</button></div>
+      <ul class="linea" id="ds-invitar-lista"></ul>
+    </section>
     <section class="tarjeta">
       <h2>Jugadores <span id="ds-cuenta"></span></h2>
       <ul class="sala-jug" id="ds-jugadores"></ul>
     </section>
-    <p class="aviso" id="ds-invitado" hidden></p>
-    <button class="btn grande primario" type="button" id="btn-sala-empezar" hidden>¡Empezar duelo!</button>
+    <section class="tarjeta" id="ds-opciones">
+      <h2>⚙️ Opciones de la ronda</h2>
+      <p class="ayuda" id="ds-opciones-ayuda"></p>
+      <label class="campo sel" for="ds-op-puesto">Temario
+        <select id="ds-op-puesto"></select>
+      </label>
+      <div class="ops-fila">
+        <label class="campo sel" for="ds-op-n">Preguntas
+          <select id="ds-op-n"><option value="5">5</option><option value="10">10</option><option value="15">15</option></select>
+        </label>
+        <label class="campo sel" for="ds-op-t">Tiempo
+          <select id="ds-op-t"><option value="30">30 s</option><option value="45">45 s</option><option value="60">60 s</option></select>
+        </label>
+      </div>
+      <label class="campo sel" for="ds-op-modo">Modo
+        <select id="ds-op-modo"><option value="mixto">Mixto: todas las áreas</option><option value="repaso">Repaso del grupo: lo que más les cuesta</option></select>
+      </label>
+    </section>
+    <button class="btn grande primario" type="button" id="btn-sala-empezar" hidden>¡Empezar!</button>
+    <button class="btn grande secundario" type="button" id="btn-sala-tomar" hidden>👑 Tomar el control del grupo</button>
     <p class="ruleta-msg" id="ds-espera"></p>
+    <button class="link" type="button" id="btn-sala-guardar">💾 Guardar este grupo en «Mis grupos»</button>
   </section>
 
-  <!-- Duelo: pregunta y revelación -->
+  <!-- Grupo: pregunta y revelación -->
   <section class="pantalla" id="p-dpreg" hidden>
     <div class="marcador" id="dp-marcador"></div>
     <div class="cat-banda" id="dp-cat"></div>
     <div class="reloj" id="dp-reloj" aria-hidden="true"><div class="reloj-barra" id="dp-barra"></div></div>
-    <div class="tarjeta pregunta"><h2 class="q-texto" id="dp-texto"></h2></div>
+    <div class="tarjeta pregunta"><h2 class="q-texto" id="dp-texto"></h2><div class="figura" id="dp-fig" hidden></div></div>
     <div class="opciones" id="dp-opciones"></div>
+    <button class="btn grande primario dp-listo" type="button" id="btn-dp-listo" disabled>✓ Listo</button>
+    <p class="ayuda dp-ayuda" id="dp-ayuda">Podés cambiar tu respuesta hasta tocar «Listo».</p>
     <div class="estado-jug" id="dp-estado"></div>
     <div class="feedback" id="dp-revela" hidden aria-live="polite">
       <p class="fb-titulo" id="dp-titulo"></p>
       <div class="explica" id="dp-explica"></div>
-      <ul class="resultados" id="dp-resultados"></ul>
+      <div class="reacciones" id="dp-reacciones" aria-label="Reaccionar"></div>
+      <ol class="tabla-grupo" id="dp-tabla"></ol>
       <p class="fb-exp" id="dp-exp"></p>
       <p class="fb-fuente" id="dp-fuente"></p>
+      <button class="link reportar" type="button" data-reportar>⚠️ Reportar un error en esta pregunta</button>
       <button class="btn grande primario" type="button" id="btn-dp-sig" hidden>Siguiente pregunta</button>
       <p class="ruleta-msg chico" id="dp-esperando" hidden></p>
     </div>
+    <div class="flotantes" id="dp-flotantes" aria-hidden="true"></div>
   </section>
 
-  <!-- Duelo: resultado -->
+  <!-- Grupo: resultado de la ronda -->
   <section class="pantalla" id="p-dfin" hidden>
     <div class="fin-hero">
       <p class="fin-emoji">🏆</p>
-      <h1 id="df-titulo">¡Duelo terminado!</h1>
+      <h1 id="df-titulo">¡Ronda terminada!</h1>
+      <p class="fin-sub" id="df-sub"></p>
     </div>
     <ol class="podio" id="df-podio"></ol>
+    <section class="tarjeta" id="df-total-caja" hidden>
+      <h2>📊 Acumulado del grupo</h2>
+      <ol class="tabla-grupo" id="df-total"></ol>
+    </section>
     <section class="tarjeta" id="df-repaso-caja">
       <h2>🧑‍🏫 Para repasar juntos</h2>
       <p class="ayuda">Las preguntas en las que alguien se equivocó, con quién le explica a quién.</p>
       <ol class="errores" id="df-repaso"></ol>
     </section>
+    <button class="btn grande primario" type="button" id="btn-df-otra" hidden>🔁 Otra ronda</button>
     <div class="fila-btn">
-      <button class="btn grande primario" type="button" id="btn-df-otro">Otro duelo</button>
-      <button class="btn grande secundario" type="button" id="btn-df-inicio">Inicio</button>
+      <button class="btn grande secundario" type="button" id="btn-df-sala">⚙️ Ir a la sala</button>
+      <button class="btn grande secundario" type="button" id="btn-df-salir">🚪 Salir del grupo</button>
     </div>
+    <p class="ruleta-msg chico" id="df-espera"></p>
   </section>
 
   <!-- Ruleta -->
@@ -429,6 +480,7 @@
       <button class="ruleta-centro" type="button" id="btn-girar">GIRAR</button>
     </div>
     <p class="ruleta-msg" id="ruleta-msg">Tocá GIRAR para sortear la categoría</p>
+    <label class="interruptor" for="op-rapido"><input type="checkbox" id="op-rapido"><span class="sw" aria-hidden="true"></span>⚡ Girar rápido</label>
     <div class="corona" id="corona" hidden>
       <p>👑 <b>¡Corona!</b> Elegí la categoría de la próxima pregunta</p>
       <div class="corona-ops" id="corona-ops"></div>
@@ -444,13 +496,16 @@
     <div class="tarjeta pregunta">
       <p class="q-meta" id="q-meta"></p>
       <h2 class="q-texto" id="q-texto"></h2>
+      <div class="figura" id="q-fig" hidden></div>
     </div>
     <div class="opciones" id="q-opciones"></div>
     <div class="feedback" id="q-feedback" hidden aria-live="polite">
       <p class="fb-titulo" id="fb-titulo"></p>
       <p class="fb-exp" id="fb-exp"></p>
       <p class="fb-fuente" id="fb-fuente"></p>
+      <div class="top-pos" id="q-toppos" hidden></div>
       <button class="btn grande primario" type="button" id="btn-seguir">Seguir</button>
+      <button class="link reportar" type="button" data-reportar id="q-reportar">⚠️ Reportar un error en esta pregunta</button>
     </div>
   </section>
 
@@ -477,6 +532,41 @@
     </div>
   </section>
 
+  <!-- Jugadores inscriptos -->
+  <section class="pantalla" id="p-jugadores" hidden>
+    <button class="volver" type="button" data-volver>← Volver</button>
+    <div class="hero chico">
+      <div class="hero-rayo" aria-hidden="true">👥</div>
+      <h1><span id="pj-total">…</span><span id="pj-titulo"> personas en el camino</span></h1>
+      <p class="hero-sub" id="pj-sub">Todas las personas inscriptas en el juego. Tocá a alguien para ver su perfil.</p>
+    </div>
+    <div class="pj-resumen" id="pj-resumen"></div>
+    <label class="campo buscar" for="pj-buscar"><input id="pj-buscar" type="search" placeholder="Buscar por nombre…" autocomplete="off"></label>
+    <div class="tabs chico" id="pj-filtro" role="tablist">
+      <button class="tab" type="button" role="tab" data-f="todos" aria-selected="true">Todos</button>
+      <button class="tab" type="button" role="tab" data-f="lector" aria-selected="false">📋 Lector</button>
+      <button class="tab" type="button" role="tab" data-f="operador" aria-selected="false">🎛️ Operador</button>
+      <button class="tab" type="button" role="tab" data-f="despachante" aria-selected="false">📡 Despachante</button>
+      <button class="tab" type="button" role="tab" data-f="ingeniero" aria-selected="false">👷 Ingeniero</button>
+    </div>
+    <ul class="pj-lista" id="pj-lista"><li class="vacio">Cargando…</li></ul>
+  </section>
+
+  <!-- Panel privado del administrador (?panel=1) -->
+  <section class="pantalla" id="p-panel" hidden>
+    <button class="volver" type="button" data-volver>← Volver</button>
+    <div class="hero chico">
+      <div class="hero-rayo" aria-hidden="true">🛠️</div>
+      <h1>Panel</h1>
+      <p class="hero-sub">Solo se abre con el link privado. No aparece en el menú.</p>
+    </div>
+    <div class="pj-resumen" id="pn-num"></div>
+    <section class="tarjeta"><h2>🎡 Partidas por puesto</h2><div class="pn-barras" id="pn-puestos"></div></section>
+    <section class="tarjeta"><h2>🗓️ Actividad (últimos 14 días)</h2><div class="pn-dias" id="pn-dias"></div></section>
+    <section class="tarjeta"><h2>⚠️ Reportes de preguntas <span class="cuenta" id="pn-rep-n"></span></h2><ul class="pn-reportes" id="pn-reportes"></ul></section>
+    <section class="tarjeta"><h2>📚 Banco de preguntas</h2><div class="pn-barras" id="pn-banco"></div></section>
+  </section>
+
 </main>
 
 <!-- Elegir puesto -->
@@ -496,6 +586,42 @@
     <p class="ayuda">10 preguntas, sin reloj y sin ranking. Ideal para reforzar tu tema más flojo.</p>
     <div class="temas" id="mt-temas"></div>
     <button class="btn secundario" value="cancelar">Cerrar</button>
+  </form>
+</dialog>
+
+<!-- Reportar un error en una pregunta -->
+<dialog class="modal" id="m-reporte">
+  <form class="modal-caja" id="f-reporte">
+    <h2>⚠️ Reportar un error</h2>
+    <p class="ayuda" id="mrp-preg"></p>
+    <div class="motivos">
+      <label><input type="radio" name="motivo" value="respuesta" required> La respuesta marcada como correcta está mal</label>
+      <label><input type="radio" name="motivo" value="redaccion"> La pregunta está mal redactada o es confusa</label>
+      <label><input type="radio" name="motivo" value="fuente"> La fuente no dice eso o está desactualizada</label>
+      <label><input type="radio" name="motivo" value="otro"> Otro problema</label>
+    </div>
+    <p class="error" id="mrp-error" hidden></p>
+    <button class="btn grande primario" type="submit" id="btn-rep-ok">Enviar reporte</button>
+    <button class="btn secundario" type="button" id="btn-rep-no">Cancelar</button>
+  </form>
+</dialog>
+
+<!-- Novedades (se muestra una vez por versión) -->
+<dialog class="modal novedades" id="m-novedades">
+  <form method="dialog" class="modal-caja">
+    <p class="nv-cinta">✨ Novedades</p>
+    <h2>¡Hacé tuyo tu perfil!</h2>
+    <ul class="nv-lista">
+      <li><b>🎨 Personalización:</b> elegí avatar, color, marco y frase. Se ven en los tops, en línea y en los grupos.</li>
+      <li><b>⭐ Niveles e insignias:</b> cada respuesta suma experiencia. Elegí hasta 3 insignias para tu vitrina.</li>
+      <li><b>👥 Grupos de hasta 10:</b> invitá a varias personas, jueguen varias rondas seguidas y cambien la respuesta hasta tocar «Listo».</li>
+      <li><b>📅 Top semanal</b>, <b>👥 Jugadores inscriptos</b> y <b>⚡ Girar rápido</b>.</li>
+      <li><b>🆕 383 preguntas nuevas</b> (ahora son 810), y el juego evita repetirte las que viste hace poco.</li>
+      <li><b>📐 Gráficos:</b> circuitos, transformadores, triángulo de potencias, planillas de Excel y tablas para resolver más fácil.</li>
+    </ul>
+    <p class="ayuda">Tus estadísticas y tu progreso siguen intactos.</p>
+    <button class="btn grande primario" value="editar" id="btn-nov-editar">✏️ Personalizar mi perfil</button>
+    <button class="btn secundario" value="cerrar">Más tarde</button>
   </form>
 </dialog>
 
@@ -554,6 +680,6 @@
 <canvas id="confeti" aria-hidden="true"></canvas>
 <div class="sin-red" id="sin-red" hidden>📴 Sin conexión: podés seguir practicando. El ranking y los duelos necesitan internet.</div>
 
-<script type="module" src="js/app.js?v=4"></script>
+<script type="module" src="js/app.js?v=5"></script>
 </body>
 </html>

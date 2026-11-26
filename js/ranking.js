@@ -13,7 +13,7 @@
  * El perfil público solo guarda números agregados. Las recomendaciones personales
  * se calculan en el navegador de cada jugador y no se publican.
  */
-import { FIREBASE_CONFIG } from './firebase-config.js?v=4';
+import { FIREBASE_CONFIG } from './firebase-config.js?v=5';
 
 const SDK = 'https://www.gstatic.com/firebasejs/11.0.2/';
 const TOP_N = 10;
@@ -21,7 +21,19 @@ const TOP_N = 10;
 // Con ?local=1 en la dirección se usa el modo local aunque haya Firebase: sirve para probar
 // cambios sin tocar la base de datos real.
 const FORZAR_LOCAL = new URLSearchParams(location.search).has('local');
-export const EN_LINEA_SEG = 90;   // se considera «en línea» a quien dio señales en los últimos 90 s
+export const EN_LINEA_SEG = 90;
+export const MAX_GRUPO = 10;
+
+// Semana ISO del año (lunes a domingo), por ejemplo «2026-W48». Sirve para el top semanal.
+export function semanaActual(fecha) {
+  const d = new Date(fecha || Date.now());
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dia = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - dia);
+  const inicio = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  const n = Math.ceil(((t - inicio) / 86400000 + 1) / 7);
+  return t.getUTCFullYear() + '-W' + String(n).padStart(2, '0');
+}   // se considera «en línea» a quien dio señales en los últimos 90 s
 
 export async function crearRanking() {
   if (FIREBASE_CONFIG && !FORZAR_LOCAL) {
@@ -87,11 +99,13 @@ async function rankingFirebase(cfg) {
       const refRank = F.doc(db, 'puestos', puesto, 'ranking', uid);
       const refPuesto = F.doc(db, 'puestos', puesto);
       const refJug = F.doc(db, 'jugadores', uid);
+      const refSem = F.doc(db, 'puestos', puesto, 'semanas', semanaActual(), 'ranking', uid);
       let resultado = null;
       await F.runTransaction(db, async function (tx) {
         const s = await tx.get(refRank);
         const p = await tx.get(refPuesto);
         const j = await tx.get(refJug);
+        const sem = await tx.get(refSem);
         const d = s.exists() ? s.data() : { mejor: 0, partidas: 0, aciertos: 0, preguntas: 0 };
         const fila = {
           nombre: nombre,
@@ -104,6 +118,12 @@ async function rankingFirebase(cfg) {
         };
         Object.assign(fila, cosmeticos(r.identidad));
         tx.set(refRank, fila);
+        const ds = sem.exists() ? sem.data() : { mejor: 0, partidas: 0, aciertos: 0, preguntas: 0 };
+        tx.set(refSem, Object.assign({
+          nombre: nombre, mejor: Math.max(ds.mejor || 0, r.puntos), partidas: (ds.partidas || 0) + 1,
+          aciertos: (ds.aciertos || 0) + r.aciertos, preguntas: (ds.preguntas || 0) + r.preguntas,
+          racha: Math.max(ds.racha || 0, r.racha || 0), ultimo: F.serverTimestamp()
+        }, cosmeticos(r.identidad)));
         const pd = p.exists() ? p.data() : { partidas: 0, jugadores: 0 };
         tx.set(refPuesto, { partidas: (pd.partidas || 0) + 1, jugadores: (pd.jugadores || 0) + (s.exists() ? 0 : 1) });
         const jd = j.exists() ? j.data() : {};
@@ -173,7 +193,8 @@ async function rankingFirebase(cfg) {
     },
 
     escucharTop(puesto, cb, orden) {
-      const q = F.query(F.collection(db, 'puestos', puesto, 'ranking'), F.orderBy(orden || 'mejor', 'desc'), F.limit(TOP_N));
+      const col = orden === 'semana' ? F.collection(db, 'puestos', puesto, 'semanas', semanaActual(), 'ranking') : F.collection(db, 'puestos', puesto, 'ranking');
+      const q = F.query(col, F.orderBy(orden === 'racha' ? 'racha' : 'mejor', 'desc'), F.limit(TOP_N));
       return F.onSnapshot(q, function (snap) {
         cb(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }), auth.currentUser && auth.currentUser.uid);
       }, function (e) { console.error(e); cb(null); });
@@ -185,6 +206,29 @@ async function rankingFirebase(cfg) {
         snap.docs.forEach(function (d) { t[d.id] = d.data(); });
         cb(t);
       }, function (e) { console.error(e); });
+    },
+
+    // Jugadores inscriptos: total exacto y lista (los más recientes primero).
+    async contarJugadores() {
+      const r = await F.getCountFromServer(F.collection(db, 'jugadores'));
+      return r.data().count;
+    },
+    async listarJugadores() {
+      const snap = await F.getDocs(F.query(F.collection(db, 'jugadores'), F.orderBy('ultimo', 'desc'), F.limit(500)));
+      return snap.docs.map(function (d) { const x = d.data(); return Object.assign({ id: d.id }, x, { ultimo: x.ultimo && x.ultimo.toMillis ? x.ultimo.toMillis() : null }); });
+    },
+    async leerPerfilDe(id) {
+      const s = await F.getDoc(F.doc(db, 'jugadores', id));
+      return s.exists() ? s.data() : null;
+    },
+    // Reportes de errores en preguntas.
+    async reportar(datos) {
+      const uid = await asegurarSesion();
+      await F.addDoc(F.collection(db, 'reportes'), { preg: datos.preg, motivo: datos.motivo, nombre: datos.nombre, uid: uid, creado: F.serverTimestamp() });
+    },
+    async listarReportes() {
+      const snap = await F.getDocs(F.query(F.collection(db, 'reportes'), F.orderBy('creado', 'desc'), F.limit(300)));
+      return snap.docs.map(function (d) { const x = d.data(); return Object.assign({ id: d.id }, x, { creado: x.creado && x.creado.toMillis ? x.creado.toMillis() : null }); });
     },
 
     escucharPerfil(id, cb) {
@@ -242,7 +286,7 @@ async function rankingFirebase(cfg) {
     },
     async responderInvitacion(id, estado) { await F.updateDoc(F.doc(db, 'invitaciones', id), { estado: estado }); },
 
-    /* ----- Salas de duelo (2 a 4 jugadores) ----- */
+    /* ----- Salas de duelo y grupos (hasta 10 jugadores) ----- */
     miIdSala() { return auth.currentUser && auth.currentUser.uid; },
 
     async crearSala(nombre, puesto, preguntas, identidad) {
@@ -253,7 +297,7 @@ async function rankingFirebase(cfg) {
         const s = await F.getDoc(ref);
         if (s.exists()) { continue; }
         const jugadores = {}; jugadores[uid] = Object.assign({ nombre: nombre, orden: 0 }, cosmeticos(identidad));
-        await F.setDoc(ref, { codigo: codigo, host: uid, puesto: puesto, preguntas: preguntas, estado: 'espera', idx: 0, fase: 'pregunta', jugadores: jugadores, respuestas: {}, creado: F.serverTimestamp() });
+        await F.setDoc(ref, { codigo: codigo, host: uid, puesto: puesto, preguntas: preguntas, estado: 'espera', idx: 0, fase: 'pregunta', jugadores: jugadores, respuestas: {}, reacciones: {}, marcador: {}, ronda: 0, config: { puesto: puesto, n: 10, tiempo: 45, modo: 'mixto' }, creado: F.serverTimestamp() });
         return codigo;
       }
       throw new Error('No se pudo crear la sala');
@@ -267,9 +311,9 @@ async function rankingFirebase(cfg) {
         if (!s.exists()) { return { error: 'No existe una sala con ese código.' }; }
         const d = s.data(), ids = Object.keys(d.jugadores || {});
         if (ids.indexOf(uid) !== -1) { return { ok: true }; }
-        if (d.estado !== 'espera') { return { error: 'Ese duelo ya empezó.' }; }
-        if (ids.length >= 4) { return { error: 'La sala está llena (máximo 4).' }; }
-        const c = {}; c['jugadores.' + uid] = Object.assign({ nombre: nombre, orden: ids.length }, cosmeticos(identidad));
+        if (ids.length >= MAX_GRUPO) { return { error: 'El grupo está lleno (máximo ' + MAX_GRUPO + ').' }; }
+        const orden = ids.reduce(function (m, k) { return Math.max(m, (d.jugadores[k].orden || 0) + 1); }, 0);
+        const c = {}; c['jugadores.' + uid] = Object.assign({ nombre: nombre, orden: orden }, cosmeticos(identidad));
         tx.update(ref, c);
         return { ok: true };
       });
@@ -287,10 +331,29 @@ async function rankingFirebase(cfg) {
       await F.updateDoc(F.doc(db, 'salas', codigo), c);
     },
 
-    async salirSala(codigo) {
+    // Salir del grupo. Si sale el anfitrión, el control pasa a otro miembro; si no queda nadie, se borra la sala.
+    async salirSala(codigo, nuevoHost) {
       const uid = await asegurarSesion();
-      const c = {}; c['jugadores.' + uid] = F.deleteField();
-      try { await F.updateDoc(F.doc(db, 'salas', codigo), c); } catch (e) { /* ya no existe */ }
+      const ref = F.doc(db, 'salas', codigo);
+      try {
+        const s = await F.getDoc(ref);
+        if (!s.exists()) { return; }
+        const d = s.data(), quedan = Object.keys(d.jugadores || {}).filter(function (k) { return k !== uid; });
+        if (d.host === uid && !quedan.length) { await F.deleteDoc(ref); return; }
+        const c = {}; c['jugadores.' + uid] = F.deleteField();
+        if (d.host === uid) { c.host = nuevoHost && quedan.indexOf(nuevoHost) !== -1 ? nuevoHost : quedan[0]; }
+        await F.updateDoc(ref, c);
+      } catch (e) { /* ya no existe o sin conexión */ }
+    },
+    // Tomar el control si el anfitrión se fue o dejó de dar señales.
+    async tomarAnfitrion(codigo) {
+      const uid = await asegurarSesion();
+      await F.updateDoc(F.doc(db, 'salas', codigo), { host: uid });
+    },
+    async reaccionar(codigo, idx, emoji) {
+      const uid = await asegurarSesion();
+      const c = {}; c['reacciones.' + idx + '.' + uid] = emoji;
+      await F.updateDoc(F.doc(db, 'salas', codigo), c);
     },
 
     miId() { return auth.currentUser && auth.currentUser.uid; }
@@ -369,6 +432,15 @@ function rankingLocal() {
       };
       Object.assign(fila, cosmeticos(r.identidad));
       p.ranking[miId] = fila;
+      const sk = semanaActual();
+      p.semanas = p.semanas || {};
+      const ps = p.semanas[sk] || (p.semanas[sk] = {});
+      const pv = ps[miId];
+      ps[miId] = Object.assign({
+        nombre: nombre, mejor: Math.max(pv ? pv.mejor : 0, r.puntos), partidas: (pv ? pv.partidas : 0) + 1,
+        aciertos: (pv ? pv.aciertos : 0) + r.aciertos, preguntas: (pv ? pv.preguntas : 0) + r.preguntas,
+        racha: Math.max(pv ? pv.racha || 0 : 0, r.racha || 0), ultimo: Date.now()
+      }, cosmeticos(r.identidad));
       p.partidas += 1;
       if (!prev) { p.jugadores += 1; }
       const j = jugadorDe(d, nombre);
@@ -394,6 +466,17 @@ function rankingLocal() {
     },
 
     async leerFila(puesto) { const p = leer().puestos[puesto]; return p && p.ranking[miId] ? p.ranking[miId] : null; },
+    async contarJugadores() { return Object.keys(leer().jugadores).length; },
+    async listarJugadores() {
+      const js = leer().jugadores;
+      return Object.keys(js).map(function (id) { return Object.assign({ id: id }, js[id]); }).sort(function (a, b) { return (b.ultimo || 0) - (a.ultimo || 0); });
+    },
+    async leerPerfilDe(id) { return leer().jugadores[id] || null; },
+    async reportar(datos) {
+      const d = leer(); d.reportes = d.reportes || [];
+      d.reportes.unshift(Object.assign({ id: 'R' + Date.now(), uid: miId, creado: Date.now() }, datos)); escribir(d);
+    },
+    async listarReportes() { return leer().reportes || []; },
     async leerPerfil() { return leer().jugadores[miId] || null; },
     async actualizarPerfil(datos) {
       const d = leer(), j = jugadorDe(d, datos.nombre || (d.jugadores[miId] || {}).nombre || 'Jugador');
@@ -414,8 +497,10 @@ function rankingLocal() {
       const campo = orden || 'mejor';
       return escuchar(function () {
         const p = leer().puestos[puesto];
-        const filas = p ? Object.keys(p.ranking).map(function (id) { return Object.assign({ id: id }, p.ranking[id]); }) : [];
-        filas.sort(function (a, b) { return (b[campo] || 0) - (a[campo] || 0) || a.ultimo - b.ultimo; });
+        const fuente = !p ? {} : (orden === 'semana' ? ((p.semanas || {})[semanaActual()] || {}) : p.ranking);
+        const filas = Object.keys(fuente).map(function (id) { return Object.assign({ id: id }, fuente[id]); });
+        const c2 = campo === 'semana' ? 'mejor' : campo;
+        filas.sort(function (a, b) { return (b[c2] || 0) - (a[c2] || 0) || a.ultimo - b.ultimo; });
         cb(filas.slice(0, TOP_N), miId);
       });
     },
@@ -489,7 +574,7 @@ function rankingLocal() {
       d.salas = d.salas || {};
       const codigo = codigoSala();
       const jugadores = {}; jugadores[idTab] = Object.assign({ nombre: nombre, orden: 0 }, cosmeticos(identidad));
-      d.salas[codigo] = { codigo: codigo, host: idTab, puesto: puesto, preguntas: preguntas, estado: 'espera', idx: 0, fase: 'pregunta', jugadores: jugadores, respuestas: {}, creado: Date.now() };
+      d.salas[codigo] = { codigo: codigo, host: idTab, puesto: puesto, preguntas: preguntas, estado: 'espera', idx: 0, fase: 'pregunta', jugadores: jugadores, respuestas: {}, reacciones: {}, marcador: {}, ronda: 0, config: { puesto: puesto, n: 10, tiempo: 45, modo: 'mixto' }, creado: Date.now() };
       escribir(d);
       return codigo;
     },
@@ -499,9 +584,9 @@ function rankingLocal() {
       if (!sala) { return { error: 'No existe una sala con ese código.' }; }
       const ids = Object.keys(sala.jugadores);
       if (ids.indexOf(idTab) !== -1) { return { ok: true }; }
-      if (sala.estado !== 'espera') { return { error: 'Ese duelo ya empezó.' }; }
-      if (ids.length >= 4) { return { error: 'La sala está llena (máximo 4).' }; }
-      sala.jugadores[idTab] = Object.assign({ nombre: nombre, orden: ids.length }, cosmeticos(identidad));
+      if (ids.length >= MAX_GRUPO) { return { error: 'El grupo está lleno (máximo ' + MAX_GRUPO + ').' }; }
+      const orden = ids.reduce(function (m, k) { return Math.max(m, (sala.jugadores[k].orden || 0) + 1); }, 0);
+      sala.jugadores[idTab] = Object.assign({ nombre: nombre, orden: orden }, cosmeticos(identidad));
       escribir(d);
       return { ok: true };
     },
@@ -524,9 +609,24 @@ function rankingLocal() {
       escribir(d);
     },
 
-    async salirSala(codigo) {
+    async salirSala(codigo, nuevoHost) {
       const d = leer(), sala = d.salas && d.salas[codigo];
-      if (sala && sala.jugadores[idTab]) { delete sala.jugadores[idTab]; escribir(d); }
+      if (!sala || !sala.jugadores[idTab]) { return; }
+      delete sala.jugadores[idTab];
+      const quedan = Object.keys(sala.jugadores);
+      if (!quedan.length) { delete d.salas[codigo]; }
+      else if (sala.host === idTab) { sala.host = nuevoHost && quedan.indexOf(nuevoHost) !== -1 ? nuevoHost : quedan[0]; }
+      escribir(d);
+    },
+    async tomarAnfitrion(codigo) {
+      const d = leer(), sala = d.salas && d.salas[codigo];
+      if (sala) { sala.host = idTab; escribir(d); }
+    },
+    async reaccionar(codigo, idx, emoji) {
+      const d = leer(), sala = d.salas && d.salas[codigo];
+      if (!sala) { return; }
+      ponerRuta(sala, 'reacciones.' + idx + '.' + idTab, emoji);
+      escribir(d);
     },
 
     miId() { return miId; }

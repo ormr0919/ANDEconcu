@@ -73,6 +73,9 @@ export const INSIGNIAS = [
   { id: 'sim_90', i: '🏆', n: 'Sobresaliente', d: 'Sacá 90 % o más en un simulacro.', ok: function (c) { return c.simMejorPct >= 0.9; } },
   { id: 'duelo1', i: '⚔️', n: 'Primer duelo', d: 'Ganá un duelo de estudio.', ok: function (c) { return c.duelosGanados >= 1; } },
   { id: 'duelo5', i: '🛡️', n: 'Duelista', d: 'Ganá 5 duelos de estudio.', ok: function (c) { return c.duelosGanados >= 5; } },
+  { id: 'grupo', i: '👥', n: 'Estudio en grupo', d: 'Jugá una ronda en un grupo de 3 o más personas.', ok: function (c) { return c.grupos >= 1; } },
+  { id: 'explicador', i: '🧑‍🏫', n: 'Profe', d: 'Explicale 10 preguntas a tu grupo (acertaste cuando alguien falló).', ok: function (c) { return c.explicador >= 10; } },
+  { id: 'rondas5', i: '👑', n: 'Líder del grupo', d: 'Ganá 5 rondas en duelos o grupos.', ok: function (c) { return c.rondasGanadas >= 5; } },
   { id: 'repaso', i: '🔁', n: 'Sin pendientes', d: 'Dejá en cero tus errores para repasar, después de haber tenido 10 o más.', ok: function (c) { return c.repasoLimpio; } }
 ].concat(Object.keys(AREAS).map(function (k) {
   return { id: 'dom_' + k, i: '⭐', n: 'Experto en ' + AREAS[k], d: '80 % o más de aciertos en ' + AREAS[k] + ', con al menos 20 respuestas.', area: k,
@@ -103,7 +106,8 @@ export function contexto(prog, difPorId) {
     maxDias: Math.max((prog.racha && prog.racha.max) || 0, (prog.racha && prog.racha.dias) || 0),
     metas: prog.metas || 0, simAprobados: simAprobados, simMejorPct: simMejorPct,
     duelosGanados: (prog.duelos && prog.duelos.ganados) || 0,
-    repasoLimpio: !!prog.repasoLimpio
+    repasoLimpio: !!prog.repasoLimpio,
+    grupos: prog.grupos || 0, explicador: prog.explicador || 0, rondasGanadas: prog.rondasGanadas || 0
   };
   c.xp = (aciertos - aciertosDificiles) * XP.acierto + aciertosDificiles * XP.aciertoDificil + respuestas * XP.respuesta
     + simAprobados * XP.simulacroAprobado + c.duelosGanados * XP.dueloGanado + c.metas * XP.metaDiaria + c.plenos * XP.pleno;

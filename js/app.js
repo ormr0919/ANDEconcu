@@ -3,14 +3,18 @@
  * Flujo: registro (una sola vez) → inicio → ruleta → pregunta → … → fin de partida.
  * Modos: clásico (con ranking), práctica por tema y repaso de errores.
  */
-import { CATEGORIAS, PUESTOS, puestoPorId } from './puestos.js?v=4';
-import { CPI_1 } from './preguntas-cpi-1.js?v=4';
-import { CPI_2 } from './preguntas-cpi-2.js?v=4';
-import { ING } from './preguntas-ing.js?v=4';
-import { EXTRA } from './preguntas-extra.js?v=4';
-import { citar } from './fuentes.js?v=4';
-import { crearRanking, EN_LINEA_SEG } from './ranking.js?v=4';
-import { contexto, nivelDe, xpParaNivel, NIVEL_MAX, AVATARES, COLORES, MARCOS, FRASES, INSIGNIAS, insigniaPorId, avatarDisponible, colorDisponible } from './perfil.js?v=4';
+import { CATEGORIAS, PUESTOS, puestoPorId } from './puestos.js?v=5';
+import { CPI_1 } from './preguntas-cpi-1.js?v=5';
+import { CPI_2 } from './preguntas-cpi-2.js?v=5';
+import { ING } from './preguntas-ing.js?v=5';
+import { EXTRA } from './preguntas-extra.js?v=5';
+import { ING2 } from './preguntas-ing2.js?v=5';
+import { CPI3 } from './preguntas-cpi3.js?v=5';
+import { figuraHtml } from './figuras.js?v=5';
+import { FIG_BANCO } from './figuras-banco.js?v=5';
+import { citar } from './fuentes.js?v=5';
+import { crearRanking, EN_LINEA_SEG, MAX_GRUPO, semanaActual } from './ranking.js?v=5';
+import { contexto, nivelDe, xpParaNivel, NIVEL_MAX, AVATARES, COLORES, MARCOS, FRASES, INSIGNIAS, insigniaPorId, avatarDisponible, colorDisponible } from './perfil.js?v=5';
 
 const TIEMPO = 45;        // segundos por pregunta en el modo clásico
 const MAX_PREG = 15;      // preguntas por partida
@@ -98,8 +102,9 @@ function filaDominio(k, s, minimo) {
 }
 
 /* ---------------- Banco de preguntas ---------------- */
-const PREGUNTAS = [].concat(CPI_1, CPI_2, ING, EXTRA).map(function (q) {
-  return { id: q[0] + '-' + hash(q[2]), cat: q[0], dif: q[1], texto: q[2], ops: q[3], exp: q[4], fuente: q[5] };
+const PREGUNTAS = [].concat(CPI_1, CPI_2, ING, EXTRA, ING2, CPI3).map(function (q) {
+  const id = q[0] + '-' + hash(q[2]);
+  return { id: id, cat: q[0], dif: q[1], texto: q[2], ops: q[3], exp: q[4], fuente: q[5], fig: q[6] || FIG_BANCO[id] || null };
 });
 const POR_CAT = {};
 const POR_ID = {};
@@ -142,6 +147,7 @@ function puestoActual() { return puestoPorId(jugador.puesto) || PUESTOS[0]; }
 function registrarRespuesta(q, ok) {
   const s = prog.preg[q.id] || (prog.preg[q.id] = { v: 0, a: 0, pend: false, rep: 0 });
   s.v += 1;
+  s.t = Date.now();
   if (ok) {
     s.a += 1;
     if (s.pend) { s.rep += 1; if (s.rep >= 2) { s.pend = false; s.rep = 0; } }
@@ -223,11 +229,15 @@ function elegir(cat, usadas, dificil) {
     if (d.length) { pool = d; }
   }
   if (!pool.length) { return null; }
+  // Las que viste hace poco casi no salen; las nuevas y las falladas tienen prioridad.
+  const ahora = Date.now();
   const pesos = pool.map(function (q) {
     const s = prog.preg[q.id];
-    if (!s) { return 3; }
-    if (s.pend) { return 5; }
-    return s.a < s.v ? 2 : 1;
+    if (!s) { return 4; }
+    const base = s.pend ? 5 : (s.a < s.v ? 1.5 : 0.8);
+    const edad = s.t ? ahora - s.t : Infinity;
+    const f = edad < 3600000 ? 0.03 : edad < 86400000 ? 0.15 : edad < 3 * 86400000 ? 0.45 : 1;
+    return base * (s.pend ? Math.max(f, 0.3) : f);
   });
   let r = Math.random() * pesos.reduce(function (a, b) { return a + b; }, 0);
   for (let i = 0; i < pool.length; i++) { r -= pesos[i]; if (r <= 0) { return pool[i]; } }
@@ -319,6 +329,8 @@ function iniciarRegistro() {
     irInicio();
     iniciarPresencia();
     publicarPerfil();
+    LS.set('andeJuego.novedades', NOVEDADES);
+    entrarPorLink();
   };
   mostrar('p-registro');
   setTimeout(function () { nombre.focus(); }, 100);
@@ -359,8 +371,12 @@ function irInicio() {
   $('i-pendientes').textContent = pend ? plural(pend, 'pregunta pendiente', 'preguntas pendientes') : 'Sin pendientes';
   $('btn-repaso').disabled = pend === 0;
 
+  const nSin = sinVer(p).length;
+  $('i-jugar-sub').textContent = 'Partida con ranking · ' + (nSin ? plural(nSin, 'pregunta sin ver', 'preguntas sin ver') : '¡viste todo el temario!');
+  dejarTopVivo();
   renderDominio(p);
   suscribirTop(p);
+  pintarBotonJugadores();
   $('pie-modo').textContent = ranking.modo === 'firebase'
     ? 'Ranking en línea: se actualiza en tiempo real.'
     : (ranking.prueba ? '🧪 Modo de prueba: no se usa la base de datos real.' : 'Ranking local de este dispositivo (sin conexión con el ranking en línea).');
@@ -421,7 +437,7 @@ function filaTop(f, i, miId, orden) {
 function renderTop(lista, filas, miId, orden) {
   lista.innerHTML = '';
   if (filas === null) { lista.append(el('li', 'vacio', 'No se pudo cargar el ranking. Revisá tu conexión.')); return; }
-  if (!filas.length) { lista.append(el('li', 'vacio', 'Todavía nadie jugó en este puesto. ¡Sé la primera persona del top!')); return; }
+  if (!filas.length) { lista.append(el('li', 'vacio', orden === 'semana' ? 'Nadie jugó todavía esta semana (el top se reinicia cada lunes). ¡Arrancalo vos!' : 'Todavía nadie jugó en este puesto. ¡Sé la primera persona del top!')); return; }
   filas.forEach(function (f, i) { lista.append(filaTop(f, i, miId, orden)); });
 }
 function textoTotales(pid) {
@@ -884,6 +900,13 @@ function abrirModalPuesto() {
 function abrirModalTema() {
   const p = puestoActual(), caja = $('mt-temas'), d = $('m-tema');
   caja.innerHTML = '';
+  const nSin = sinVer(p).length;
+  const bn = el('button', 'cat-op nuevas');
+  bn.type = 'button'; bn.style.setProperty('--c', 'var(--teal, #12C2B0)');
+  bn.append(el('span', null, '🆕'), document.createTextNode('Solo preguntas nuevas'), el('small', null, nSin ? plural(nSin, 'pregunta que todavía no viste', 'preguntas que todavía no viste') : 'Ya viste todas'));
+  bn.disabled = !nSin;
+  bn.addEventListener('click', function () { d.close(); iniciarPartida('nuevas'); });
+  caja.append(bn);
   p.cats.forEach(function (k) {
     const c = CATEGORIAS[k], s = prog.cats[k];
     const b = el('button', 'cat-op');
@@ -941,7 +964,13 @@ function iniciarPartida(modo, cat) {
     partida.cola = mezclar(pendientes(p)).slice(0, MAX_PREG);
     partida.total = partida.cola.length;
     siguientePregunta();
+  } else if (modo === 'nuevas') {
+    partida.cola = colaNuevas(p, 10);
+    partida.total = partida.cola.length;
+    if (!partida.total) { aviso('🎉 ¡Ya viste todas las preguntas de tu temario!'); partida = null; irInicio(); return; }
+    siguientePregunta();
   } else {
+    seguirTopVivo(p);
     prepararRuleta();
   }
 }
@@ -957,7 +986,7 @@ function marcadorHtml(caja) {
     );
   } else {
     caja.append(
-      el('span', 'prog', ({ repaso: '🔁 Repaso', entreno: '🧠 Entreno', practica: '🎯 Práctica' }[partida.modo]) + ' · ' + num + ' de ' + partida.total),
+      el('span', 'prog', ({ repaso: '🔁 Repaso', entreno: '🧠 Entreno', practica: '🎯 Práctica', nuevas: '🆕 Nuevas' }[partida.modo]) + ' · ' + num + ' de ' + partida.total),
       el('span', 'racha', '✅ ' + partida.aciertos)
     );
   }
@@ -1030,6 +1059,7 @@ function prepararRuleta() {
     $('corona').hidden = true;
     $('ruleta-msg').textContent = 'Tocá GIRAR para sortear la categoría';
   }
+  $('op-rapido').checked = !!perfilCfg().girarRapido;
   mostrar('p-ruleta');
 }
 function girar() {
@@ -1040,17 +1070,20 @@ function girar() {
   const i = Math.floor(Math.random() * n);
   const centro = (i + 0.5) * paso + (Math.random() - 0.5) * paso * 0.6;
   const actual = ((giro % 360) + 360) % 360;
-  giro += 360 * 5 + ((360 - centro - actual) % 360 + 360) % 360;
+  const rapido = !!perfilCfg().girarRapido;
+  const dur = rapido ? 1300 : 4000;
+  giro += 360 * (rapido ? 2 : 5) + ((360 - centro - actual) % 360 + 360) % 360;
+  $('ruleta').style.transitionDuration = dur + 'ms';
   $('ruleta').style.transform = 'rotate(' + giro + 'deg)';
   $('ruleta-msg').textContent = 'Girando…';
   let ticks = 0;
-  const tic = setInterval(function () { Sonido.tick(); if (++ticks > 22) { clearInterval(tic); } }, 160);
+  const tic = setInterval(function () { Sonido.tick(); if (++ticks > (rapido ? 7 : 22)) { clearInterval(tic); } }, 160);
   setTimeout(function () {
     clearInterval(tic);
     const k = segs[i];
     $('ruleta-msg').textContent = CATEGORIAS[k].icono + ' ' + CATEGORIAS[k].n;
-    setTimeout(function () { preguntaDeCategoria(k); }, 700);
-  }, 4100);
+    setTimeout(function () { preguntaDeCategoria(k); }, rapido ? 350 : 700);
+  }, dur + 100);
 }
 function preguntaDeCategoria(k) {
   let q = elegir(k, partida.usadas, partida.n >= 5);
@@ -1077,6 +1110,7 @@ function mostrarPregunta(q) {
   const st = prog.preg[q.id];
   $('q-meta').textContent = (q.dif === 3 ? 'Dificultad media-alta' : 'Dificultad media') + (st && st.pend ? ' · ⚠️ La fallaste antes' : (st ? ' · Ya la viste' : ' · Nueva'));
   $('q-texto').textContent = q.texto;
+  pintarFigura('q-fig', q);
   const correcta = q.ops[0];
   const caja = $('q-opciones');
   caja.innerHTML = '';
@@ -1180,6 +1214,8 @@ function responder(boton) {
   const f = citar(q.fuente), fuente = $('fb-fuente');
   fuente.textContent = 'Fuente: ' + f.texto + ' ';
   if (f.url) { const a = el('a', null, 'Ver fuente'); a.href = f.url; a.target = '_blank'; a.rel = 'noopener'; fuente.append(a); }
+  $('q-reportar').dataset.preg = q.id;
+  pintarTopVivo(partida.puntos);
   const fin = partidaTerminada();
   $('btn-seguir').textContent = fin ? 'Ver resultado' : 'Seguir';
   fb.hidden = false;
@@ -1199,6 +1235,7 @@ function seguir() {
 /* ----- Fin ----- */
 async function terminar() {
   detenerReloj();
+  dejarTopVivo();
   const p = partida.puesto;
   const pct = partida.n ? Math.round(partida.aciertos / partida.n * 100) : 0;
   $('f-record').hidden = true;
@@ -1239,8 +1276,8 @@ async function terminar() {
       $('f-record').hidden = false;
     }
   } else {
-    $('f-emoji').textContent = { repaso: '🔁', entreno: '🧠', practica: '🎯' }[partida.modo];
-    $('f-titulo').textContent = { repaso: 'Repaso terminado', entreno: 'Entrenamiento terminado', practica: 'Práctica terminada' }[partida.modo];
+    $('f-emoji').textContent = { repaso: '🔁', entreno: '🧠', practica: '🎯', nuevas: '🆕' }[partida.modo];
+    $('f-titulo').textContent = { repaso: 'Repaso terminado', entreno: 'Entrenamiento terminado', practica: 'Práctica terminada', nuevas: 'Preguntas nuevas: listo' }[partida.modo];
     $('f-puntos').textContent = partida.aciertos + '/' + partida.n;
     $('f-sub').textContent = pct + ' % de aciertos · suma a tu perfil, no al ranking';
     $('f-medallas').hidden = true;
@@ -1313,6 +1350,7 @@ function mostrarSim() {
   $('s-barra').style.width = (partida.idx / total * 100) + '%';
   $('s-meta').textContent = c.icono + ' ' + c.n;
   $('s-texto').textContent = q.texto;
+  pintarFigura('s-fig', q);
   const caja = $('s-opciones');
   caja.innerHTML = '';
   mezclar(q.ops).forEach(function (txt, i) {
@@ -1464,41 +1502,344 @@ function publicarPerfil() {
   }).catch(function (e) { console.warn('No se pudo actualizar el perfil público:', e); });
 }
 
-/* ---------------- Duelo de estudio (2 a 4 personas) ---------------- */
+/* ---------------- Gráfico de la pregunta ---------------- */
+function pintarFigura(id, q) {
+  const caja = $(id);
+  if (!caja) { return; }
+  const html = q && q.fig ? figuraHtml(q.fig) : '';
+  caja.innerHTML = html;
+  caja.hidden = !html;
+}
+
+/* ---------------- Preguntas sin ver ---------------- */
+function preguntasPuesto(p) { return PREGUNTAS.filter(function (q) { return p.cats.indexOf(q.cat) !== -1; }); }
+function sinVer(p) { return preguntasPuesto(p).filter(function (q) { return !prog.preg[q.id]; }); }
+function colaNuevas(p, n) {
+  const nuevas = mezclar(sinVer(p));
+  // Reparte entre áreas para que no salgan todas del mismo tema.
+  const porCat = {};
+  nuevas.forEach(function (q) { (porCat[q.cat] = porCat[q.cat] || []).push(q); });
+  const cats = mezclar(Object.keys(porCat)), cola = [];
+  while (cola.length < n && cats.some(function (k) { return porCat[k].length; })) {
+    cats.forEach(function (k) { if (cola.length < n && porCat[k].length) { cola.push(porCat[k].shift()); } });
+  }
+  return cola;
+}
+
+/* ---------------- «Vas X.º en el top» (partida con ranking) ---------------- */
+let quitarTopVivo = null, topVivo = null;
+function seguirTopVivo(p) {
+  dejarTopVivo();
+  topVivo = { pid: p.id, filas: null, miId: null, pos: null };
+  quitarTopVivo = ranking.escucharTop(p.id, function (filas, miId) { if (topVivo) { topVivo.filas = filas; topVivo.miId = miId; } }, 'mejor');
+}
+function dejarTopVivo() { if (quitarTopVivo) { quitarTopVivo(); quitarTopVivo = null; } topVivo = null; }
+function pintarTopVivo(puntos) {
+  const caja = $('q-toppos');
+  if (!topVivo || !topVivo.filas || !partida || partida.modo !== 'clasico') { caja.hidden = true; return; }
+  const otros = topVivo.filas.filter(function (f) { return f.id !== topVivo.miId; });
+  const pos = 1 + otros.filter(function (f) { return (f.mejor || 0) > puntos; }).length;
+  const antes = topVivo.pos;
+  topVivo.pos = pos;
+  caja.innerHTML = '';
+  caja.className = 'top-pos';
+  if (pos > 10) {
+    const ult = otros[9];
+    caja.append(el('span', 'tp-num', '📈'), el('span', 'tp-txt', 'Te faltan ' + miles((ult ? ult.mejor : 0) - puntos + 1) + ' pts para entrar al top 10 de ' + partida.puesto.corto));
+  } else {
+    const delante = otros.filter(function (f) { return (f.mejor || 0) > puntos; }).pop();
+    const num = el('span', 'tp-num', pos + '.º');
+    caja.append(num, el('span', 'tp-txt', (pos === 1 ? '¡Vas primero en el top de ' + partida.puesto.corto + '!' : 'Vas ' + pos + '.º en el top de ' + partida.puesto.corto)
+      + (delante ? ' · a ' + miles(delante.mejor - puntos + 1) + ' pts de ' + delante.nombre : '')));
+    if (antes != null && pos < antes) { caja.classList.add('sube'); num.dataset.antes = antes + '.º'; }
+  }
+  caja.hidden = false;
+}
+
+/* ---------------- Reportar un error en una pregunta ---------------- */
+let reportePreg = null;
+function abrirReporte(id) {
+  const q = POR_ID[id];
+  if (!q) { return; }
+  const ya = (perfilCfg().reportados || []).indexOf(id) !== -1;
+  if (ya) { aviso('Ya reportaste esta pregunta. ¡Gracias!'); return; }
+  reportePreg = id;
+  $('mrp-preg').textContent = '«' + q.texto + '»';
+  $('f-reporte').reset();
+  $('mrp-error').hidden = true;
+  $('m-reporte').showModal();
+}
+async function enviarReporte(ev) {
+  ev.preventDefault();
+  const motivo = (new FormData(ev.target)).get('motivo');
+  if (!motivo || !reportePreg) { return; }
+  const b = $('btn-rep-ok');
+  b.disabled = true;
+  try {
+    await ranking.reportar({ preg: reportePreg, motivo: motivo, nombre: jugador.nombre });
+    const pf = perfilCfg();
+    pf.reportados = (pf.reportados || []).concat([reportePreg]).slice(-200);
+    guardarProg();
+    $('m-reporte').close();
+    aviso('✅ Gracias: vamos a revisar esa pregunta.');
+  } catch (e) {
+    console.error(e);
+    $('mrp-error').textContent = 'No se pudo enviar. Revisá tu conexión.';
+    $('mrp-error').hidden = false;
+  } finally { b.disabled = false; }
+}
+
+/* ---------------- Jugadores inscriptos ---------------- */
+let cacheJugadores = null, cacheTotal = null, filtroJug = 'todos';
+function haceTxt(ms) {
+  if (!ms) { return 'sin actividad registrada'; }
+  const m = Math.round((Date.now() - ms) / 60000);
+  if (m < 2) { return 'recién'; }
+  if (m < 60) { return 'hace ' + m + ' min'; }
+  const h = Math.round(m / 60);
+  if (h < 24) { return 'hace ' + plural(h, 'hora', 'horas'); }
+  const d = Math.round(h / 24);
+  return d === 1 ? 'ayer' : 'hace ' + d + ' días';
+}
+async function traerJugadores(forzar) {
+  if (!forzar && cacheJugadores && Date.now() - cacheJugadores.t < 120000) { return cacheJugadores.lista; }
+  const lista = await ranking.listarJugadores();
+  cacheJugadores = { t: Date.now(), lista: lista };
+  return lista;
+}
+async function pintarBotonJugadores() {
+  try {
+    if (!cacheTotal || Date.now() - cacheTotal.t > 300000) { cacheTotal = { t: Date.now(), n: await ranking.contarJugadores() }; }
+    $('jb-total').textContent = miles(cacheTotal.n);
+    $('jb-sub').textContent = (cacheTotal.n === 1 ? 'persona inscripta' : 'personas inscriptas') + ' · ver quiénes son';
+  } catch (e) { console.warn(e); $('jb-total').textContent = '👥'; }
+  const avs = $('jb-avs');
+  avs.innerHTML = '';
+  const fuente = cacheJugadores ? cacheJugadores.lista : enLinea;
+  fuente.slice(0, 4).forEach(function (j) { const a = el('span', 'avatar mini'); pintarAvatar(a, j.nombre, j); avs.append(a); });
+}
+function puestosDe(j) {
+  const s = new Set(j.postula || []);
+  Object.keys(j.puestos || {}).forEach(function (k) { if ((j.puestos[k].partidas || 0) > 0) { s.add(k); } });
+  return Array.from(s).filter(puestoPorId);
+}
+async function abrirJugadores() {
+  if (quitarTop) { quitarTop(); quitarTop = null; }
+  mostrar('p-jugadores');
+  $('pj-lista').innerHTML = '';
+  $('pj-lista').append(el('li', 'vacio', 'Cargando…'));
+  try {
+    const lista = await traerJugadores(false);
+    const total = cacheTotal ? Math.max(cacheTotal.n, lista.length) : lista.length;
+    $('pj-total').textContent = miles(total);
+    const ahora = Date.now();
+    const hoyN = lista.filter(function (j) { return j.ultimo && ahora - j.ultimo < 86400000; }).length;
+    const semN = lista.filter(function (j) { return j.ultimo && ahora - j.ultimo < 7 * 86400000; }).length;
+    const res = $('pj-resumen');
+    res.innerHTML = '';
+    [[miles(total), total === 1 ? 'inscripta' : 'inscriptas'], [miles(hoyN), 'activas hoy'], [miles(semN), 'esta semana']]
+      .forEach(function (x) { const d = el('div'); d.append(el('b', null, x[0]), el('small', null, x[1])); res.append(d); });
+    $('pj-titulo').textContent = total === 1 ? ' persona en el camino' : ' personas en el camino';
+    document.querySelectorAll('#pj-filtro .tab').forEach(function (t) {
+      const p = puestoPorId(t.dataset.f);
+      const n = p ? lista.filter(function (j) { return puestosDe(j).indexOf(p.id) !== -1; }).length : lista.length;
+      t.textContent = (p ? p.icono + ' ' + p.corto : 'Todos') + ' · ' + n;
+    });
+    renderListaJugadores();
+  } catch (e) {
+    console.error(e);
+    $('pj-lista').innerHTML = '';
+    $('pj-lista').append(el('li', 'vacio', 'No se pudo cargar la lista. Revisá tu conexión.'));
+  }
+}
+function renderListaJugadores() {
+  const ul = $('pj-lista');
+  if (!cacheJugadores) { return; }
+  const txt = $('pj-buscar').value.trim().toLowerCase();
+  const yo = ranking.miId();
+  const lista = cacheJugadores.lista.filter(function (j) {
+    return (!txt || String(j.nombre || '').toLowerCase().indexOf(txt) !== -1) && (filtroJug === 'todos' || puestosDe(j).indexOf(filtroJug) !== -1);
+  });
+  document.querySelectorAll('#pj-filtro .tab').forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.f === filtroJug)); });
+  ul.innerHTML = '';
+  if (!lista.length) { ul.append(el('li', 'vacio', 'No hay nadie con ese filtro.')); return; }
+  const enl = {};
+  enLinea.forEach(function (x) { if (Date.now() - x.ultimo < EN_LINEA_SEG * 1000) { enl[x.id] = true; } });
+  lista.forEach(function (j, i) {
+    const li = el('li', j.id === yo ? 'yo' : null);
+    li.style.setProperty('--i', Math.min(i, 20));
+    li.tabIndex = 0; li.setAttribute('role', 'button');
+    const av = el('span', 'avatar chico' + (enl[j.id] ? ' en-linea' : ''));
+    pintarAvatar(av, j.nombre, j);
+    const t = el('span', 'pj-txt');
+    t.append(el('b', null, (esFavorito(j.id) ? '★ ' : '') + j.nombre + (j.id === yo ? ' (vos)' : '')),
+      el('small', null, 'Nv ' + (j.nivel || 1) + ' · ' + plural(j.partidas || 0, 'partida', 'partidas') + ' · ' + (enl[j.id] ? '🟢 en línea' : haceTxt(j.ultimo))));
+    const ps = el('span', 'pj-puestos');
+    puestosDe(j).forEach(function (pid) { const p = puestoPorId(pid); const s = el('span', null, p.icono); s.title = p.n; ps.append(s); });
+    li.append(av, t, ps);
+    li.addEventListener('click', function () { abrirPerfil(j.id, j.nombre); });
+    li.addEventListener('keydown', function (e) { if (e.key === 'Enter') { li.click(); } });
+    ul.append(li);
+  });
+}
+
+/* ---------------- Novedades (una vez por versión) ---------------- */
+const NOVEDADES = 'v5';
+function mostrarNovedades() {
+  if (!jugador || LS.get('andeJuego.novedades', '') === NOVEDADES) { return; }
+  const ins = $('m-inscripcion');
+  if (ins.open) { ins.addEventListener('close', function () { setTimeout(mostrarNovedades, 400); }, { once: true }); return; }
+  if ($('p-inicio').hidden) { return; }
+  const d = $('m-novedades');
+  LS.set('andeJuego.novedades', NOVEDADES);
+  d.addEventListener('close', function () { if (d.returnValue === 'editar') { abrirEditor(); } }, { once: true });
+  d.showModal();
+}
+
+/* ---------------- Link de invitación ?sala=CODE ---------------- */
+function codigoEnLink() {
+  const u = new URL(location.href), c = (u.searchParams.get('sala') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (c.length === 4) { sessionStorage.setItem('andeJuego.salaLink', c); }
+  if (u.searchParams.has('sala')) { u.searchParams.delete('sala'); history.replaceState(null, '', u.pathname + (u.search || '') + u.hash); }
+}
+async function entrarPorLink() {
+  const c = sessionStorage.getItem('andeJuego.salaLink');
+  if (!c || !jugador) { return; }
+  sessionStorage.removeItem('andeJuego.salaLink');
+  if (duelo && duelo.codigo === c) { return; }
+  abrirDuelo();
+  $('dm-codigo').value = c;
+  try { const err = await unirseCodigo(c); if (err) { errorDuelo(err); } }
+  catch (e) { console.error(e); errorDuelo('No se pudo entrar al grupo ' + c + '. Revisá tu conexión.'); }
+}
+
+/* ---------------- Panel privado (?panel=1) ---------------- */
+async function abrirPanel() {
+  if (quitarTop) { quitarTop(); quitarTop = null; }
+  mostrar('p-panel');
+  const num = $('pn-num');
+  num.innerHTML = '';
+  num.append(el('div', null, 'Cargando…'));
+  try {
+    const [lista, total, reps] = await Promise.all([traerJugadores(true), ranking.contarJugadores(), ranking.listarReportes().catch(function () { return []; })]);
+    const ahora = Date.now();
+    const partidas = Object.keys(totales).reduce(function (n, k) { return n + (totales[k].partidas || 0); }, 0);
+    num.innerHTML = '';
+    [[miles(total), 'inscriptas'], [miles(lista.filter(function (j) { return j.ultimo && ahora - j.ultimo < 86400000; }).length), 'activas 24 h'],
+      [miles(lista.filter(function (j) { return j.ultimo && ahora - j.ultimo < 7 * 86400000; }).length), 'activas 7 días'], [miles(partidas), 'partidas con ranking'],
+      [miles(lista.reduce(function (n, j) { return n + Object.keys(j.cats || {}).reduce(function (m, k) { return m + (j.cats[k].v || 0); }, 0); }, 0)), 'respuestas'],
+      [String(reps.length), 'reportes']].forEach(function (x) { const d = el('div'); d.append(el('b', null, x[0]), el('small', null, x[1])); num.append(d); });
+    barras($('pn-puestos'), PUESTOS.map(function (p) { const t = totales[p.id] || {}; return [p.icono + ' ' + p.corto, t.partidas || 0, plural(t.jugadores || 0, 'jugador', 'jugadores')]; }));
+    const dias = [];
+    for (let i = 13; i >= 0; i--) {
+      const d0 = new Date(); d0.setHours(0, 0, 0, 0); d0.setDate(d0.getDate() - i);
+      const d1 = d0.getTime() + 86400000;
+      dias.push([d0.toLocaleDateString('es-PY', { weekday: 'short', day: 'numeric' }), lista.filter(function (j) { return j.ultimo >= d0.getTime() && j.ultimo < d1; }).length]);
+    }
+    const cd = $('pn-dias'), mx = Math.max.apply(null, dias.map(function (x) { return x[1]; }).concat([1]));
+    cd.innerHTML = '';
+    dias.forEach(function (x) { const c = el('div', 'pn-dia'); const b = el('i'); b.style.height = Math.round(x[1] / mx * 100) + '%'; c.append(el('b', null, String(x[1])), b, el('small', null, x[0])); cd.append(c); });
+    cd.append(el('p', 'ayuda', 'Última actividad de cada persona por día.'));
+    const ul = $('pn-reportes');
+    ul.innerHTML = '';
+    $('pn-rep-n').textContent = '(' + reps.length + ')';
+    const MOT = { respuesta: 'Respuesta incorrecta', redaccion: 'Redacción confusa', fuente: 'Fuente', otro: 'Otro' };
+    if (!reps.length) { ul.append(el('li', 'vacio', 'Sin reportes por ahora.')); }
+    reps.forEach(function (r) {
+      const q = POR_ID[r.preg], li = el('li');
+      li.append(el('b', null, MOT[r.motivo] || r.motivo), el('small', null, ' · ' + r.nombre + ' · ' + haceTxt(r.creado) + ' · ' + r.preg),
+        el('div', 'q', q ? q.texto : '(pregunta no encontrada)'), el('div', 'a', q ? '✔ ' + q.ops[0] : ''));
+      ul.append(li);
+    });
+    barras($('pn-banco'), Object.keys(CATEGORIAS).map(function (k) { return [CATEGORIAS[k].icono + ' ' + CATEGORIAS[k].n, (POR_CAT[k] || []).length, '']; }));
+  } catch (e) { console.error(e); num.innerHTML = ''; num.append(el('div', null, 'No se pudo cargar: ' + e.message)); }
+}
+function barras(caja, filas) {
+  const mx = Math.max.apply(null, filas.map(function (f) { return f[1]; }).concat([1]));
+  caja.innerHTML = '';
+  filas.forEach(function (f) {
+    const r = el('div', 'pn-barra'), b = el('i');
+    b.style.width = Math.round(f[1] / mx * 100) + '%';
+    r.append(el('span', null, f[0]), el('span', 'pn-b'), el('b', null, miles(f[1]) + (f[2] ? ' · ' + f[2] : '')));
+    r.children[1].append(b);
+    caja.append(r);
+  });
+}
+
+/* ---------------- Duelos y grupos de estudio (2 a 10 personas) ---------------- */
+/*
+ * Un grupo es una sala que se mantiene entre rondas. El anfitrión elige temario, cantidad de preguntas,
+ * tiempo y modo; cada ronda sale con preguntas nuevas. Cada miembro puede cambiar su respuesta hasta
+ * tocar «Listo». Al revelar, la tabla del grupo se reacomoda con animación y se pueden mandar reacciones.
+ */
 const DUELO_PREG = 10;
 const DUELO_TIEMPO = 45;
-let duelo = null;   // { codigo, sala, quitar, idxVisto, reveladoIdx, respondido, reloj, hostTimer, deltas, cerrado }
+const REACCIONES = ['👏', '🔥', '😅', '🤯', '💡'];
+let duelo = null;
 
+function cfgSala(sala) {
+  const c = (sala && sala.config) || {};
+  return { puesto: c.puesto || (sala && sala.puesto) || puestoActual().id, n: c.n || DUELO_PREG, tiempo: c.tiempo || DUELO_TIEMPO, modo: c.modo || 'mixto' };
+}
 function abrirDuelo() {
-  const p = puestoActual();
-  $('dm-puesto').textContent = 'Se juega con el temario de ' + p.n + ' (tu puesto actual): ' + DUELO_PREG + ' preguntas de ' + DUELO_TIEMPO + ' segundos. Pasale el código a quienes quieras invitar.';
+  $('dm-puesto').textContent = 'El anfitrión elige el temario, la cantidad de preguntas y el tiempo. Invitá desde «En línea» o pasá el link.';
   $('dm-error').hidden = true;
   $('dm-codigo').value = '';
   $('dm-modo').textContent = ranking.modo === 'firebase'
-    ? 'Cada persona entra desde su propio celular con el código.'
-    : 'Modo local: el duelo solo funciona entre pestañas de este navegador. Para jugar con otros celulares hay que activar Firebase (ver LEEME).';
+    ? 'Cada persona entra desde su propio celular. El grupo sigue armado entre rondas.'
+    : 'Modo de prueba: los grupos solo funcionan entre pestañas de este navegador.';
+  renderMisGrupos();
   mostrar('p-duelo');
 }
-function preguntasDuelo(p) {
+// Elige preguntas del temario. Con «pesos» (modo repaso) salen más de las áreas que más les cuestan.
+function preguntasDuelo(pid, n, pesos) {
+  const p = puestoPorId(pid) || puestoActual();
   const cats = mezclar(p.cats), usadas = new Set(), ids = [];
-  for (let i = 0; i < DUELO_PREG; i++) {
-    const pool = (POR_CAT[cats[i % cats.length]] || []).filter(function (q) { return !usadas.has(q.id); });
+  for (let i = 0; i < (n || DUELO_PREG); i++) {
+    let k = cats[i % cats.length];
+    if (pesos) {
+      const tot = p.cats.reduce(function (a, c) { return a + (pesos[c] || 0); }, 0);
+      let r = Math.random() * tot;
+      for (const c of p.cats) { r -= pesos[c] || 0; if (r <= 0) { k = c; break; } }
+    }
+    const pool = (POR_CAT[k] || []).filter(function (q) { return !usadas.has(q.id); });
     const q = pool[Math.floor(Math.random() * pool.length)];
     if (q) { usadas.add(q.id); ids.push(q.id); }
   }
   return mezclar(ids);
 }
+// Promedio de aciertos por área de los miembros (los perfiles privados no aportan datos).
+async function pesosDelGrupo(sala, pid) {
+  const p = puestoPorId(pid), suma = {};
+  for (const id of Object.keys(sala.jugadores || {})) {
+    let d = null;
+    try { d = id === ranking.miIdSala() ? { cats: prog.cats } : await ranking.leerPerfilDe(id); } catch (e) { d = null; }
+    const cats = (d && !d.privado && d.cats) || {};
+    p.cats.forEach(function (k) { const s = cats[k]; if (s && s.v) { suma[k] = suma[k] || { v: 0, a: 0 }; suma[k].v += s.v; suma[k].a += s.a; } });
+  }
+  const pesos = {};
+  p.cats.forEach(function (k) { const s = suma[k]; const acc = s && s.v >= 3 ? s.a / s.v : 0.5; pesos[k] = Math.pow(1 - acc, 2) + 0.05; });
+  return pesos;
+}
 function errorDuelo(t) { const e = $('dm-error'); e.textContent = t; e.hidden = false; }
+async function crearGrupo() {
+  const p = puestoActual();
+  const codigo = await ranking.crearSala(jugador.nombre, p.id, preguntasDuelo(p.id, DUELO_PREG), identidadPropia());
+  entrarSala(codigo);
+  return codigo;
+}
 async function crearSalaDuelo() {
   const b = $('btn-crear-sala');
-  b.disabled = true;
-  b.textContent = 'Creando sala…';
-  try {
-    const codigo = await ranking.crearSala(jugador.nombre, puestoActual().id, preguntasDuelo(puestoActual()), identidadPropia());
-    entrarSala(codigo);
-  } catch (e) {
-    console.error(e); errorDuelo('No se pudo crear la sala. Revisá tu conexión.');
-  } finally { b.disabled = false; b.textContent = 'Crear sala'; }
+  b.disabled = true; b.textContent = 'Creando grupo…';
+  try { await crearGrupo(); }
+  catch (e) { console.error(e); errorDuelo('No se pudo crear el grupo. Revisá tu conexión.'); }
+  finally { b.disabled = false; b.textContent = 'Crear grupo'; }
+}
+async function unirseCodigo(codigo) {
+  const r = await ranking.unirseSala(codigo, jugador.nombre, identidadPropia());
+  if (r.error) { return r.error; }
+  entrarSala(codigo);
+  return null;
 }
 async function unirseSalaDuelo(ev) {
   ev.preventDefault();
@@ -1506,34 +1847,43 @@ async function unirseSalaDuelo(ev) {
   if (codigo.length !== 4) { errorDuelo('El código tiene 4 caracteres.'); return; }
   const bu = ev.target.querySelector('button[type=submit]');
   bu.disabled = true; bu.textContent = 'Entrando…';
-  try {
-    const r = await ranking.unirseSala(codigo, jugador.nombre, identidadPropia());
-    if (r.error) { errorDuelo(r.error); return; }
-    entrarSala(codigo);
-  } catch (e) { console.error(e); errorDuelo('No se pudo entrar a la sala. Revisá el código y tu conexión.'); }
+  try { const err = await unirseCodigo(codigo); if (err) { errorDuelo(err); } }
+  catch (e) { console.error(e); errorDuelo('No se pudo entrar al grupo. Revisá el código y tu conexión.'); }
   finally { bu.disabled = false; bu.textContent = 'Unirme'; }
 }
-function entrarSala(codigo) {
-  limpiarDuelo();
-  duelo = { codigo: codigo, sala: null, quitar: null, idxVisto: -1, reveladoIdx: -1, respondido: false, reloj: null, hostTimer: null, deltas: {}, cerrado: false };
+function entrarSala(codigo, reconexion) {
+  limpiarDuelo(true);
+  sessionStorage.setItem('andeJuego.salaActual', codigo);
+  duelo = { codigo: codigo, sala: null, quitar: null, vistaKey: '', reveladoKey: '', sel: null, listo: false, reloj: null, hostTimer: null,
+    deltas: {}, cerradoRonda: 0, verSala: false, ronda: null, invitaciones: {}, reacVistas: {}, explicados: {}, reconexion: !!reconexion };
   duelo.quitar = ranking.escucharSala(codigo, alCambiarSala);
 }
-function limpiarDuelo() {
+function limpiarDuelo(silencioso) {
   if (!duelo) { return; }
   if (duelo.quitar) { duelo.quitar(); }
-  if (duelo.quitarInvEnviada) { duelo.quitarInvEnviada(); }
-  clearTimeout(duelo.timerInv);
-  if (duelo.invitacion && duelo.invitacion.estado === 'pendiente') {
-    ranking.responderInvitacion(duelo.invitacion.id, 'cancelada').catch(function (e) { console.error(e); });
-  }
+  sessionStorage.removeItem('andeJuego.salaActual');
+  Object.keys(duelo.invitaciones || {}).forEach(function (id) {
+    const inv = duelo.invitaciones[id];
+    if (inv.quitar) { inv.quitar(); }
+    clearTimeout(inv.timer);
+    if (inv.estado === 'pendiente') { ranking.responderInvitacion(id, 'cancelada').catch(function (e) { console.error(e); }); }
+  });
   if (duelo.reloj) { cancelAnimationFrame(duelo.reloj.raf); }
   clearTimeout(duelo.hostTimer);
   duelo = null;
-  presenciaPorPantalla();
+  if (!silencioso) { presenciaPorPantalla(); }
 }
-async function salirDuelo() {
-  if (duelo && duelo.sala && duelo.sala.estado === 'espera') { try { await ranking.salirSala(duelo.codigo); } catch (e) { console.error(e); } }
+function siguienteAnfitrion(sala) {
+  const yo = ranking.miIdSala();
+  const otros = jugadoresSala(sala).filter(function (j) { return j.id !== yo; });
+  return otros.length ? otros[0].id : null;
+}
+async function salirDuelo(sinPreguntar) {
+  if (!duelo) { irInicio(); return; }
+  if (!sinPreguntar && duelo.sala && duelo.sala.estado === 'jugando' && !confirm('¿Salir del grupo en medio de la ronda?')) { return; }
+  const codigo = duelo.codigo, sala = duelo.sala;
   limpiarDuelo();
+  try { await ranking.salirSala(codigo, sala ? siguienteAnfitrion(sala) : null); } catch (e) { console.error(e); }
   irInicio();
 }
 function soyHost() { return duelo && duelo.sala && duelo.sala.host === ranking.miIdSala(); }
@@ -1547,19 +1897,33 @@ function nombres(lista) {
 }
 function alCambiarSala(sala) {
   if (!duelo) { return; }
-  if (!sala) { limpiarDuelo(); alert('La sala ya no existe.'); irInicio(); return; }
-  if (!sala.jugadores || !sala.jugadores[ranking.miIdSala()]) {
-    if (sala.estado !== 'espera') { limpiarDuelo(); alert('Ya no formás parte de esta sala.'); irInicio(); return; }
+  const reconexion = duelo.reconexion;
+  duelo.reconexion = false;
+  if (!sala || !sala.jugadores || !sala.jugadores[ranking.miIdSala()]) {
+    limpiarDuelo();
+    if (reconexion) { if (!$('p-sala').hidden || !$('p-dfin').hidden || !$('p-dpreg').hidden) { irInicio(); } return; }
+    aviso(!sala ? 'El grupo ya no existe.' : 'Ya no formás parte del grupo.'); irInicio(); return;
   }
+  const antes = duelo.sala;
   duelo.sala = sala;
-  if (sala.estado === 'espera') { renderSala(); } else if (sala.estado === 'jugando') { renderDueloPregunta(); } else { renderDueloFin(); }
+  if (antes && antes.host !== sala.host && sala.host === ranking.miIdSala()) { aviso('👑 Ahora sos el anfitrión del grupo'); }
+  if (duelo.ronda !== sala.ronda) { duelo.ronda = sala.ronda; duelo.verSala = false; }
+  if (sala.estado === 'jugando') { renderDueloPregunta(); }
+  else if (sala.estado === 'fin' && !duelo.verSala) { renderDueloFin(); }
+  else { renderSala(); }
 }
 
+/* ----- Sala ----- */
+function anfitrionAusente(sala) {
+  if (!sala.jugadores[sala.host]) { return true; }
+  const p = enLinea.find(function (j) { return j.id === sala.host; });
+  return !p || Date.now() - p.ultimo > 120000;
+}
 function renderSala() {
-  const sala = duelo.sala, jug = jugadoresSala(sala), p = puestoPorId(sala.puesto);
+  const sala = duelo.sala, jug = jugadoresSala(sala), cfg = cfgSala(sala), host = soyHost();
+  const marc = sala.marcador || {};
   $('ds-codigo').textContent = sala.codigo;
-  $('ds-puesto').textContent = 'Temario: ' + (p ? p.n : sala.puesto) + ' · ' + sala.preguntas.length + ' preguntas.';
-  $('ds-cuenta').textContent = '(' + jug.length + ' de 4)';
+  $('ds-cuenta').textContent = '(' + jug.length + ' de ' + 10 + ')';
   const ul = $('ds-jugadores');
   ul.innerHTML = '';
   jug.forEach(function (j) {
@@ -1567,44 +1931,160 @@ function renderSala() {
     pintarAvatar(av, j.nombre, j);
     li.append(av, el('span', null, j.nombre + (j.id === ranking.miIdSala() ? ' (vos)' : '')));
     if (j.id === sala.host) { li.append(el('small', 'insignia', 'anfitrión')); }
+    if (marc[j.id] && marc[j.id].pts) { li.append(el('small', 'pts-acum', miles(marc[j.id].pts) + ' pts')); }
     ul.append(li);
   });
-  for (let i = jug.length; i < 4; i++) { ul.append(el('li', 'libre', 'Lugar libre')); }
-  const host = soyHost();
-  $('btn-sala-empezar').hidden = !host;
-  $('btn-sala-empezar').disabled = jug.length < 2;
+  if (jug.length < 3) { ul.append(el('li', 'libre', 'Invitá hasta ' + (10 - jug.length) + ' personas más')); }
+  // Opciones (solo el anfitrión las cambia)
+  const sp = $('ds-op-puesto');
+  if (!sp.options.length) { PUESTOS.forEach(function (p) { const o = el('option', null, p.icono + ' ' + p.n); o.value = p.id; sp.append(o); }); }
+  sp.value = cfg.puesto; $('ds-op-n').value = String(cfg.n); $('ds-op-t').value = String(cfg.tiempo); $('ds-op-modo').value = cfg.modo;
+  ['ds-op-puesto', 'ds-op-n', 'ds-op-t', 'ds-op-modo'].forEach(function (id) { $(id).disabled = !host; });
+  $('ds-opciones-ayuda').textContent = host ? 'Vos elegís cómo es la ronda.' : 'Las elige el anfitrión.';
+  const b = $('btn-sala-empezar');
+  b.hidden = !host;
+  b.disabled = jug.length < 2;
+  b.textContent = (sala.ronda || 0) > 0 ? '🔁 Empezar la ronda ' + ((sala.ronda || 0) + 1) : '¡Empezar!';
+  $('btn-sala-tomar').hidden = host || !anfitrionAusente(sala);
   const anfitrion = jug.find(function (j) { return j.id === sala.host; });
   $('ds-espera').textContent = host
     ? (jug.length < 2 ? 'Esperando que se una al menos una persona más…' : '¡Listos! Empezá cuando estén todos.')
-    : 'Esperando que ' + (anfitrion ? anfitrion.nombre : 'el anfitrión') + ' empiece el duelo…';
+    : 'Esperando que ' + (anfitrion ? anfitrion.nombre : 'el anfitrión') + ' empiece la ronda…';
   pintarInvitado();
+  if (!$('ds-invitar-caja').hidden) { renderInvitarLista(); }
   mostrar('p-sala');
 }
+function cambiarOpcion() {
+  if (!soyHost()) { return; }
+  const c = { puesto: $('ds-op-puesto').value, n: parseInt($('ds-op-n').value, 10), tiempo: parseInt($('ds-op-t').value, 10), modo: $('ds-op-modo').value };
+  ranking.actualizarSala(duelo.codigo, { config: c }).catch(function (e) { console.error(e); aviso('No se pudo guardar la opción.'); });
+}
+async function empezarRonda(boton) {
+  if (!soyHost()) { return; }
+  const sala = duelo.sala, cfg = cfgSala(sala);
+  if (jugadoresSala(sala).length < 2) { aviso('Hace falta al menos una persona más.'); return; }
+  if (boton) { boton.disabled = true; }
+  try {
+    let pesos = null;
+    if (cfg.modo === 'repaso') { try { pesos = await pesosDelGrupo(sala, cfg.puesto); } catch (e) { pesos = null; } }
+    await ranking.actualizarSala(duelo.codigo, {
+      estado: 'jugando', idx: 0, fase: 'pregunta', preguntas: preguntasDuelo(cfg.puesto, cfg.n, pesos),
+      respuestas: {}, reacciones: {}, ronda: (sala.ronda || 0) + 1, puesto: cfg.puesto
+    });
+  } catch (e) { console.error(e); aviso('No se pudo empezar la ronda. Revisá tu conexión.'); }
+  finally { if (boton) { boton.disabled = false; } }
+}
+function tomarControl() {
+  ranking.tomarAnfitrion(duelo.codigo).then(function () { aviso('👑 Tomaste el control del grupo'); })
+    .catch(function () { aviso('El anfitrión sigue conectado: todavía no se puede tomar el control.'); });
+}
 
-function puntosDuelo(sala) {
+/* ----- Invitar ----- */
+function renderInvitarLista() {
+  const ul = $('ds-invitar-lista'), sala = duelo && duelo.sala;
+  if (!ul || !sala) { return; }
+  ul.innerHTML = '';
+  const ahora = Date.now();
+  const lista = enLinea.filter(function (j) { return !sala.jugadores[j.id] && ahora - j.ultimo < EN_LINEA_SEG * 1000; })
+    .sort(function (a, b) { return (esFavorito(b.id) ? 1 : 0) - (esFavorito(a.id) ? 1 : 0); });
+  if (!lista.length) { ul.append(el('li', 'vacio', 'No hay nadie más en línea ahora. Pasales el link por WhatsApp.')); return; }
+  lista.forEach(function (j) {
+    const li = el('li'), punto = el('span', 'av-punto'), av = el('span', 'avatar chico');
+    pintarAvatar(av, j.nombre, j); punto.append(av);
+    const nom = el('span', 'nom'), txt = el('span', 'txt');
+    if (esFavorito(j.id)) { txt.append(el('span', 'fav', '★')); }
+    txt.append(document.createTextNode(j.nombre), el('small', null, j.ocupado ? 'jugando' : (j.desafios === false ? 'no recibe desafíos' : 'disponible')));
+    nom.append(txt);
+    li.append(punto, nom);
+    const yaInv = Object.keys(duelo.invitaciones).some(function (id) { return duelo.invitaciones[id].para === j.id && duelo.invitaciones[id].estado === 'pendiente'; });
+    if (j.ocupado || j.desafios === false) { li.append(el('span', 'estado', j.ocupado ? '🎮' : '🔕')); }
+    else if (yaInv) { li.append(el('span', 'estado', '⏳ invitado')); }
+    else { const b = el('button', 'btn primario', 'Invitar'); b.type = 'button'; b.addEventListener('click', function () { desafiar(j, b); }); li.append(b); }
+    ul.append(li);
+  });
+}
+function invitarSala() {
+  if (!duelo) { return; }
+  const url = location.origin + location.pathname + '?sala=' + duelo.codigo;
+  const txt = '⚔️ ¡Sumate a mi grupo de estudio en «Camino a la libertad»! Entrá con este link (código ' + duelo.codigo + '): ';
+  if (navigator.share) { navigator.share({ title: 'Grupo · Camino a la libertad', text: txt, url: url }).catch(function () {}); return; }
+  window.open('https://wa.me/?text=' + encodeURIComponent(txt + url), '_blank', 'noopener');
+}
+
+/* ----- Mis grupos ----- */
+function renderMisGrupos() {
+  const gs = perfilCfg().grupos || [], ul = $('dm-grupos');
+  $('dm-grupos-caja').hidden = !gs.length;
+  ul.innerHTML = '';
+  gs.forEach(function (g, i) {
+    const li = el('li');
+    const t = el('div', 'mg-txt'); t.append(el('b', null, g.nombre), el('small', null, g.miembros.map(function (m) { return m.nombre; }).join(', ')));
+    const b = el('button', 'btn primario', 'Invitar a todos'); b.type = 'button';
+    b.addEventListener('click', function () { invitarGrupo(g, b); });
+    const x = el('button', 'link', 'Borrar'); x.type = 'button';
+    x.addEventListener('click', function () { if (confirm('¿Borrar «' + g.nombre + '» de tus grupos?')) { gs.splice(i, 1); guardarProg(); renderMisGrupos(); } });
+    li.append(t, b, x);
+    ul.append(li);
+  });
+}
+function guardarGrupo() {
+  if (!duelo || !duelo.sala) { return; }
+  const yo = ranking.miIdSala();
+  const miembros = jugadoresSala(duelo.sala).filter(function (j) { return j.id !== yo; }).map(function (j) { return { id: j.id, nombre: j.nombre }; });
+  if (!miembros.length) { aviso('Todavía no hay nadie más en el grupo.'); return; }
+  const nombre = (prompt('¿Cómo se llama este grupo?', 'Grupo de estudio') || '').trim().slice(0, 30);
+  if (!nombre) { return; }
+  const pf = perfilCfg();
+  pf.grupos = (pf.grupos || []).filter(function (g) { return g.nombre !== nombre; });
+  pf.grupos.unshift({ nombre: nombre, miembros: miembros, creado: Date.now() });
+  pf.grupos = pf.grupos.slice(0, 10);
+  guardarProg();
+  aviso('💾 Grupo «' + nombre + '» guardado');
+}
+async function invitarGrupo(g, b) {
+  b.disabled = true;
+  try {
+    if (!duelo) { await crearGrupo(); }
+    const ahora = Date.now();
+    let enviados = 0;
+    const faltan = [];
+    for (const m of g.miembros) {
+      const j = enLinea.find(function (x) { return x.id === m.id && ahora - x.ultimo < EN_LINEA_SEG * 1000 && !x.ocupado && x.desafios !== false; });
+      if (j) { await enviarInvitacion(j); enviados += 1; } else { faltan.push(m.nombre); }
+    }
+    aviso(enviados ? '📨 Invitaciones enviadas: ' + enviados + (faltan.length ? ' · no están en línea: ' + faltan.join(', ') : '') : 'Nadie del grupo está en línea ahora. Pasales el link.');
+  } catch (e) { console.error(e); aviso('No se pudieron enviar las invitaciones.'); }
+  finally { b.disabled = false; }
+}
+
+/* ----- Pregunta, «Listo» y revelación ----- */
+function puntosDuelo(sala, hasta) {
   const t = {};
   jugadoresSala(sala).forEach(function (j) { t[j.id] = { pts: 0, ok: 0 }; });
   Object.keys(sala.respuestas || {}).forEach(function (i) {
+    if (hasta != null && Number(i) > hasta) { return; }
     const r = sala.respuestas[i];
     Object.keys(r).forEach(function (id) { if (t[id]) { t[id].pts += r[id].pts || 0; if (r[id].ok) { t[id].ok += 1; } } });
   });
   return t;
 }
-
 function renderDueloPregunta() {
-  const sala = duelo.sala, idx = sala.idx, q = POR_ID[sala.preguntas[idx]];
+  const sala = duelo.sala, idx = sala.idx, q = POR_ID[(sala.preguntas || [])[idx]];
   if (!q) { return; }
-  const yo = ranking.miIdSala(), jug = jugadoresSala(sala);
+  const cfg = cfgSala(sala), yo = ranking.miIdSala(), jug = jugadoresSala(sala);
   const resp = (sala.respuestas && sala.respuestas[idx]) || {};
+  const key = sala.ronda + ':' + idx;
 
-  if (duelo.idxVisto !== idx) {
-    duelo.idxVisto = idx;
-    duelo.respondido = !!resp[yo];
+  if (duelo.vistaKey !== key) {
+    duelo.vistaKey = key;
+    duelo.sel = null;
+    duelo.listo = !!resp[yo];
     const c = CATEGORIAS[q.cat], banda = $('dp-cat');
     banda.innerHTML = '';
     banda.style.setProperty('--c', c.color);
     banda.append(el('span', 'ic', c.icono), document.createTextNode(c.n));
     $('dp-texto').textContent = q.texto;
+    pintarFigura('dp-fig', q);
     const caja = $('dp-opciones');
     caja.innerHTML = '';
     mezclar(q.ops).forEach(function (txt, i) {
@@ -1613,25 +2093,28 @@ function renderDueloPregunta() {
       b.dataset.ok = String(txt === q.ops[0]);
       b.dataset.txt = txt;
       b.append(el('span', 'letra', LETRAS[i]), el('span', null, txt));
-      b.disabled = duelo.respondido;
-      b.addEventListener('click', function () { responderDuelo(b, q, idx); });
+      b.disabled = duelo.listo;
+      b.addEventListener('click', function () { elegirDuelo(b); });
       caja.append(b);
     });
+    const bl = $('btn-dp-listo');
+    bl.hidden = duelo.listo; bl.disabled = true; bl.textContent = '✓ Listo';
+    $('dp-ayuda').hidden = duelo.listo;
     $('dp-revela').hidden = true;
     mostrar('p-dpreg');
-    if (!duelo.respondido) { relojDuelo(q, idx); } else { $('dp-reloj').hidden = true; }
+    if (!duelo.listo) { relojDuelo(q, key, cfg.tiempo); } else { $('dp-reloj').hidden = true; }
     if (soyHost()) {
       clearTimeout(duelo.hostTimer);
       duelo.hostTimer = setTimeout(function () {
-        if (duelo && duelo.sala.idx === idx && duelo.sala.fase === 'pregunta') { ranking.actualizarSala(duelo.codigo, { fase: 'revelar' }); }
-      }, (DUELO_TIEMPO + 3) * 1000);
+        if (duelo && duelo.sala.ronda + ':' + duelo.sala.idx === key && duelo.sala.fase === 'pregunta') { ranking.actualizarSala(duelo.codigo, { fase: 'revelar' }); }
+      }, (cfg.tiempo + 3) * 1000);
     }
   }
 
   const tot = puntosDuelo(sala);
   const m = $('dp-marcador');
   m.innerHTML = '';
-  m.append(el('span', 'prog', '⚔️ Pregunta ' + (idx + 1) + ' de ' + sala.preguntas.length), el('span', 'pts', miles((tot[yo] || { pts: 0 }).pts)));
+  m.append(el('span', 'prog', '⚔️ Ronda ' + (sala.ronda || 1) + ' · ' + (idx + 1) + ' de ' + sala.preguntas.length), el('span', 'pts', miles((tot[yo] || { pts: 0 }).pts)));
 
   const est = $('dp-estado');
   est.innerHTML = '';
@@ -1644,50 +2127,88 @@ function renderDueloPregunta() {
 
   if (sala.fase === 'pregunta') {
     if (soyHost() && jug.every(function (j) { return resp[j.id]; })) { ranking.actualizarSala(duelo.codigo, { fase: 'revelar' }); }
-  } else if (sala.fase === 'revelar' && duelo.reveladoIdx !== idx) {
-    duelo.reveladoIdx = idx;
-    revelarDuelo(q, resp, jug, idx);
+  } else if (sala.fase === 'revelar') {
+    if (duelo.reveladoKey !== key) { duelo.reveladoKey = key; revelarDuelo(q, resp, jug, idx); }
+    mostrarReacciones(sala, idx);
   }
 }
-
-function relojDuelo(q, idx) {
+function relojDuelo(q, key, tiempo) {
   const caja = $('dp-reloj'), barra = $('dp-barra');
   caja.hidden = false;
   if (duelo.reloj) { cancelAnimationFrame(duelo.reloj.raf); }
   const t0 = performance.now();
-  duelo.reloj = { restante: DUELO_TIEMPO, raf: 0, ultimoTic: DUELO_TIEMPO };
+  duelo.reloj = { restante: tiempo, total: tiempo, raf: 0, ultimoTic: tiempo };
   (function cuadro(t) {
-    if (!duelo || !duelo.reloj || duelo.idxVisto !== idx) { return; }
-    const rest = Math.max(0, DUELO_TIEMPO - (t - t0) / 1000);
+    if (!duelo || !duelo.reloj || duelo.vistaKey !== key) { return; }
+    const rest = Math.max(0, tiempo - (t - t0) / 1000);
     duelo.reloj.restante = rest;
-    barra.style.transform = 'scaleX(' + (rest / DUELO_TIEMPO) + ')';
+    barra.style.transform = 'scaleX(' + (rest / tiempo) + ')';
     barra.className = 'reloj-barra' + (rest < 6 ? ' poco' : rest < 14 ? ' medio' : '');
     if (rest < 5 && Math.ceil(rest) < duelo.reloj.ultimoTic) { duelo.reloj.ultimoTic = Math.ceil(rest); Sonido.tick(); }
-    if (rest <= 0) { responderDuelo(null, q, idx); return; }
+    if (rest <= 0) { confirmarDuelo(q, true); return; }
     duelo.reloj.raf = requestAnimationFrame(cuadro);
   })(t0);
 }
-
-function responderDuelo(boton, q, idx) {
-  if (!duelo || duelo.respondido || duelo.idxVisto !== idx) { return; }
-  duelo.respondido = true;
-  const rest = duelo.reloj ? duelo.reloj.restante : 0;
+// Elegir (y cambiar) la respuesta antes de confirmar.
+function elegirDuelo(b) {
+  if (!duelo || duelo.listo) { return; }
+  duelo.sel = b.dataset.txt;
+  Array.from($('dp-opciones').children).forEach(function (x) { x.classList.toggle('elegida', x === b); });
+  $('btn-dp-listo').disabled = false;
+  vibrar(12);
+}
+function confirmarDuelo(q, porTiempo) {
+  if (!duelo || duelo.listo) { return; }
+  q = q || POR_ID[duelo.sala.preguntas[duelo.sala.idx]];
+  const idx = duelo.sala.idx;
+  duelo.listo = true;
+  const rest = duelo.reloj ? duelo.reloj.restante : 0, total = duelo.reloj ? duelo.reloj.total : DUELO_TIEMPO;
   if (duelo.reloj) { cancelAnimationFrame(duelo.reloj.raf); duelo.reloj = null; }
   $('dp-reloj').hidden = true;
-  Array.from($('dp-opciones').children).forEach(function (b) { b.disabled = true; if (b === boton) { b.classList.add('elegida'); } });
-  const ok = !!boton && boton.dataset.ok === 'true';
+  Array.from($('dp-opciones').children).forEach(function (b) { b.disabled = true; });
+  $('btn-dp-listo').hidden = true;
+  $('dp-ayuda').hidden = true;
+  const ok = duelo.sel != null && duelo.sel === q.ops[0];
   registrarRespuesta(q, ok);
   const dl = duelo.deltas[q.cat] || (duelo.deltas[q.cat] = { v: 0, a: 0 });
   dl.v += 1; if (ok) { dl.a += 1; }
   vibrar(30);
-  const pts = ok ? 100 + Math.round(rest / DUELO_TIEMPO * 50) : 0;
-  ranking.responderSala(duelo.codigo, idx, { op: boton ? boton.dataset.txt : null, ok: ok, pts: pts })
-    .catch(function (e) { console.error(e); });
+  const pts = ok ? 100 + (porTiempo ? 0 : Math.round(rest / total * 50)) : 0;
+  ranking.responderSala(duelo.codigo, idx, { op: duelo.sel, ok: ok, pts: pts }).catch(function (e) { console.error(e); });
 }
 
+// Tabla del grupo con animación: cada fila se desliza desde su posición anterior.
+function tablaAnimada(ol, filas) {
+  const antes = {};
+  Array.from(ol.children).forEach(function (li, i) { antes[li.dataset.id] = i; });
+  ol.innerHTML = '';
+  filas.forEach(function (f, i) {
+    const li = el('li', f.yo ? 'yo' : null), av = el('span', 'avatar mini');
+    li.dataset.id = f.id;
+    pintarAvatar(av, f.nombre, f.ident);
+    li.append(el('span', 'tg-pos', String(i + 1)), av, el('span', 'tg-nom', f.nombre), el('span', 'tg-pts', miles(f.pts)));
+    if (f.delta) { li.append(el('span', 'tg-delta', '+' + f.delta)); }
+    ol.append(li);
+  });
+  requestAnimationFrame(function () {
+    Array.from(ol.children).forEach(function (li, i) {
+      const a = antes[li.dataset.id];
+      if (a == null) { li.classList.add('nueva'); return; }
+      if (a !== i) {
+        const h = li.offsetHeight + 6;
+        li.style.transition = 'none';
+        li.style.transform = 'translateY(' + ((a - i) * h) + 'px)';
+        li.classList.add(a > i ? 'sube' : 'baja');
+        requestAnimationFrame(function () { li.style.transition = 'transform .7s cubic-bezier(.2, .8, .2, 1)'; li.style.transform = ''; });
+      }
+    });
+  });
+}
 function revelarDuelo(q, resp, jug, idx) {
   if (duelo.reloj) { cancelAnimationFrame(duelo.reloj.raf); duelo.reloj = null; }
   $('dp-reloj').hidden = true;
+  $('btn-dp-listo').hidden = true;
+  $('dp-ayuda').hidden = true;
   clearTimeout(duelo.hostTimer);
   const yo = ranking.miIdSala(), mia = resp[yo];
   Array.from($('dp-opciones').children).forEach(function (b) {
@@ -1709,9 +2230,13 @@ function revelarDuelo(q, resp, jug, idx) {
   if (acertaron.length && fallaron.length) {
     ex.className = 'explica';
     ex.append(el('b', null, '🧑‍🏫 ' + nombres(acertaron) + (acertaron.length > 1 ? ' acertaron' : ' acertó') + ': '),
-      document.createTextNode('explicale' + (acertaron.length > 1 ? 'n' : '') + ' a ' + nombres(fallaron) + ' por qué la respuesta es «' + q.ops[0] + '».'));
+      document.createTextNode((acertaron.length > 1 ? 'explíquenle' : 'explicale') + ' a ' + nombres(fallaron) + ' por qué la respuesta es «' + q.ops[0] + '».'));
     const yoAcerte = acertaron.some(function (j) { return j.id === yo; });
     ex.append(el('p', 'tu-rol', yoAcerte ? '👉 Te toca explicar. Usá la explicación de abajo como guía.' : '👉 Pedí que te expliquen antes de seguir.'));
+    if (yoAcerte && !duelo.explicados[duelo.sala.ronda + ':' + idx]) {
+      duelo.explicados[duelo.sala.ronda + ':' + idx] = true;
+      prog.explicador = (prog.explicador || 0) + 1; guardarProg();
+    }
   } else if (acertaron.length) {
     ex.className = 'explica bien';
     ex.append(el('b', null, '🎉 ¡Todos acertaron!'));
@@ -1720,54 +2245,101 @@ function revelarDuelo(q, resp, jug, idx) {
     ex.append(el('b', null, '📖 Nadie acertó: '), document.createTextNode('lean juntos la explicación y la fuente.'));
   }
 
-  const ul = $('dp-resultados');
-  ul.innerHTML = '';
-  jug.forEach(function (j) {
-    const r = resp[j.id], li = el('li', r && r.ok ? 'ok' : 'no'), av = el('span', 'avatar mini');
-    pintarAvatar(av, j.nombre, j);
-    li.append(av, el('span', 'rn', j.nombre), el('span', 'rr', r && r.ok ? '✔ +' + r.pts : (r && r.op ? '✘ «' + r.op + '»' : '⏰ sin respuesta')));
-    ul.append(li);
+  // Reacciones
+  const rb = $('dp-reacciones');
+  rb.innerHTML = '';
+  REACCIONES.forEach(function (e) {
+    const b = el('button', 'reac', e); b.type = 'button';
+    b.setAttribute('aria-label', 'Reaccionar con ' + e);
+    b.addEventListener('click', function () {
+      Array.from(rb.children).forEach(function (x) { x.classList.toggle('mia', x === b); });
+      ranking.reaccionar(duelo.codigo, idx, e).catch(function (err) { console.error(err); });
+    });
+    rb.append(b);
   });
+
+  // Tabla del grupo animada
+  const tot = puntosDuelo(duelo.sala, idx);
+  const filas = jug.map(function (j) { return { id: j.id, nombre: j.nombre, ident: j, pts: tot[j.id].pts, delta: resp[j.id] && resp[j.id].pts ? resp[j.id].pts : 0, yo: j.id === yo }; })
+    .sort(function (a, b) { return b.pts - a.pts; });
+  tablaAnimada($('dp-tabla'), filas);
+
   $('dp-exp').textContent = q.exp;
   const f = citar(q.fuente), fuente = $('dp-fuente');
   fuente.textContent = 'Fuente: ' + f.texto + ' ';
   if (f.url) { const a = el('a', null, 'Ver fuente'); a.href = f.url; a.target = '_blank'; a.rel = 'noopener'; fuente.append(a); }
+  $('dp-revela').querySelector('[data-reportar]').dataset.preg = q.id;
 
   const ultima = idx >= duelo.sala.preguntas.length - 1;
   const host = soyHost();
   $('btn-dp-sig').hidden = !host;
-  $('btn-dp-sig').textContent = ultima ? 'Ver resultados' : 'Siguiente pregunta';
+  $('btn-dp-sig').textContent = ultima ? 'Ver resultados de la ronda' : 'Siguiente pregunta';
   const anf = jug.find(function (j) { return j.id === duelo.sala.host; });
   $('dp-esperando').hidden = host;
   $('dp-esperando').textContent = 'Cuando terminen de explicar, ' + (anf ? anf.nombre : 'el anfitrión') + ' pasa a la siguiente.';
   $('dp-revela').hidden = false;
   setTimeout(function () { $('dp-revela').scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80);
 }
-
-function siguienteDuelo() {
+function mostrarReacciones(sala, idx) {
+  const r = (sala.reacciones && sala.reacciones[idx]) || {}, capa = $('dp-flotantes');
+  Object.keys(r).forEach(function (id) {
+    const clave = sala.ronda + ':' + idx + ':' + id + ':' + r[id];
+    if (duelo.reacVistas[clave]) { return; }
+    duelo.reacVistas[clave] = true;
+    const j = sala.jugadores[id];
+    const f = el('span', 'flota');
+    f.append(el('b', null, r[id]), el('small', null, j ? j.nombre : ''));
+    f.style.left = (10 + Math.random() * 75) + '%';
+    capa.append(f);
+    setTimeout(function () { f.remove(); }, 2600);
+  });
+}
+async function siguienteDuelo() {
   if (!soyHost()) { return; }
   const sala = duelo.sala;
   $('btn-dp-sig').hidden = true;
-  if (sala.idx >= sala.preguntas.length - 1) { ranking.actualizarSala(duelo.codigo, { estado: 'fin' }); }
-  else { ranking.actualizarSala(duelo.codigo, { idx: sala.idx + 1, fase: 'pregunta' }); }
+  try {
+    if (sala.idx >= sala.preguntas.length - 1) {
+      // Fin de la ronda: se suma al acumulado del grupo.
+      const tot = puntosDuelo(sala), marc = Object.assign({}, sala.marcador || {});
+      const max = Math.max.apply(null, Object.keys(tot).map(function (k) { return tot[k].pts; }).concat([0]));
+      Object.keys(tot).forEach(function (id) {
+        const m = marc[id] || { pts: 0, rondas: 0 };
+        marc[id] = { pts: (m.pts || 0) + tot[id].pts, rondas: (m.rondas || 0) + (max > 0 && tot[id].pts === max ? 1 : 0), nombre: sala.jugadores[id].nombre };
+      });
+      await ranking.actualizarSala(duelo.codigo, { estado: 'fin', marcador: marc });
+    } else {
+      await ranking.actualizarSala(duelo.codigo, { idx: sala.idx + 1, fase: 'pregunta' });
+    }
+  } catch (e) { console.error(e); $('btn-dp-sig').hidden = false; aviso('No se pudo avanzar. Probá de nuevo.'); }
 }
 
+/* ----- Fin de la ronda ----- */
 function renderDueloFin() {
   const sala = duelo.sala, yo = ranking.miIdSala(), jug = jugadoresSala(sala), tot = puntosDuelo(sala);
   const orden = jug.slice().sort(function (a, b) { return tot[b.id].pts - tot[a.id].pts || tot[b.id].ok - tot[a.id].ok; });
   const max = orden.length ? tot[orden[0].id].pts : 0;
   const ganadores = orden.filter(function (j) { return tot[j.id].pts === max; });
   $('df-titulo').textContent = ganadores.length > 1 ? '¡Empate entre ' + nombres(ganadores) + '!' : '¡Ganó ' + (ganadores[0] ? ganadores[0].nombre : '') + '!';
+  $('df-sub').textContent = 'Ronda ' + (sala.ronda || 1) + ' · ' + plural(jug.length, 'jugador', 'jugadores');
   const podio = $('df-podio');
   podio.innerHTML = '';
   orden.forEach(function (j, i) {
     const li = el('li', j.id === yo ? 'yo' : null), av = el('span', 'avatar chico');
     pintarAvatar(av, j.nombre, j);
-    li.append(el('span', 'pos', ['🥇', '🥈', '🥉', '4'][i] || String(i + 1)), av,
+    li.append(el('span', 'pos', ['🥇', '🥈', '🥉'][i] || String(i + 1)), av,
       el('span', 'nom', j.nombre), el('span', 'pts', miles(tot[j.id].pts)), el('small', null, tot[j.id].ok + '/' + sala.preguntas.length));
     podio.append(li);
   });
-
+  // Acumulado de todas las rondas
+  const marc = sala.marcador || {};
+  const acum = jug.map(function (j) { const m = marc[j.id] || {}; return { id: j.id, nombre: j.nombre, ident: j, pts: m.pts || 0, delta: 0, yo: j.id === yo, rondas: m.rondas || 0 }; })
+    .sort(function (a, b) { return b.pts - a.pts; });
+  $('df-total-caja').hidden = (sala.ronda || 1) < 2;
+  if ((sala.ronda || 1) >= 2) {
+    tablaAnimada($('df-total'), acum);
+    Array.from($('df-total').children).forEach(function (li, i) { if (acum[i].rondas) { li.append(el('span', 'tg-delta', '🏆 ' + acum[i].rondas)); } });
+  }
   const lista = $('df-repaso');
   lista.innerHTML = '';
   sala.preguntas.forEach(function (id, i) {
@@ -1782,27 +2354,25 @@ function renderDueloFin() {
     lista.append(li);
   });
   $('df-repaso-caja').hidden = !lista.children.length;
+  const host = soyHost();
+  $('btn-df-otra').hidden = !host;
+  $('df-espera').textContent = host ? '' : 'El grupo sigue armado: esperá que el anfitrión empiece otra ronda o salí cuando quieras.';
 
-  if (!duelo.cerrado) {
-    duelo.cerrado = true;
+  if (duelo.cerradoRonda !== sala.ronda) {
+    duelo.cerradoRonda = sala.ronda;
     const gano = tot[yo] && tot[yo].pts === max && max > 0;
-    if (gano) { confeti(160); Sonido.fin(); }
+    if (gano) { confeti(160); Sonido.fin(); prog.rondasGanadas = (prog.rondasGanadas || 0) + 1; }
+    if (jug.length >= 3) { prog.grupos = (prog.grupos || 0) + 1; }
     actualizarRacha();
     prog.duelos = prog.duelos || { jugados: 0, ganados: 0 };
     prog.duelos.jugados += 1; if (gano) { prog.duelos.ganados += 1; }
     guardarProg();
     setTimeout(revisarLogros, 400);
-    ranking.guardarStats(jugador.nombre, duelo.deltas, prog.mejorRacha || 0, { duelo: { gano: gano }, privado: !!perfilCfg().privado }).catch(function (e) { console.error(e); });
+    const deltas = duelo.deltas;
+    duelo.deltas = {};
+    ranking.guardarStats(jugador.nombre, deltas, prog.mejorRacha || 0, { duelo: { gano: gano }, privado: !!perfilCfg().privado }).catch(function (e) { console.error(e); });
   }
   mostrar('p-dfin');
-}
-
-function invitarSala() {
-  if (!duelo) { return; }
-  const txt = '⚔️ ¡Te desafío a un duelo de estudio en «Camino a la libertad»! Entrá y poné el código ' + duelo.codigo + ': ';
-  const url = location.href.split('#')[0];
-  if (navigator.share) { navigator.share({ title: 'Duelo · Camino a la libertad', text: txt, url: url }).catch(function () {}); return; }
-  window.open('https://wa.me/?text=' + encodeURIComponent(txt + url), '_blank', 'noopener');
 }
 
 /* ---------------- En línea ahora y desafíos ---------------- */
@@ -1902,51 +2472,65 @@ function aviso(texto) {
   timerAviso = setTimeout(function () { a.hidden = true; }, 4000);
 }
 
+// Invita a alguien al grupo actual (si no hay grupo, lo crea). Se pueden mandar varias a la vez.
+async function enviarInvitacion(j) {
+  const codigo = duelo.codigo, cfg = cfgSala(duelo.sala);
+  if (duelo.sala && Object.keys(duelo.sala.jugadores || {}).length >= MAX_GRUPO) { aviso('El grupo ya está completo (' + MAX_GRUPO + ').'); return; }
+  const id = await ranking.invitar({ deNombre: jugador.nombre, para: j.id, paraNombre: j.nombre, puesto: cfg.puesto, codigo: codigo });
+  if (!duelo || duelo.codigo !== codigo) { ranking.responderInvitacion(id, 'cancelada'); return; }
+  const inv = { id: id, para: j.id, nombre: j.nombre, estado: 'pendiente', quitar: null, timer: null };
+  duelo.invitaciones[id] = inv;
+  pintarInvitado();
+  inv.quitar = ranking.escucharInvitacion(id, function (d) {
+    if (!duelo || duelo.invitaciones[id] !== inv) { return; }
+    const est = d ? d.estado : 'cancelada';
+    if (est === inv.estado) { return; }
+    inv.estado = est;
+    clearTimeout(inv.timer);
+    if (est === 'aceptada') { aviso('✅ ' + j.nombre + ' aceptó: entra al grupo'); Sonido.ok(); }
+    else if (est === 'rechazada') { aviso('🙅 ' + j.nombre + ' no puede ahora'); }
+    else if (est === 'cancelada') { aviso('⌛ ' + j.nombre + ' no respondió a tiempo'); }
+    if (est !== 'pendiente' && inv.quitar) { inv.quitar(); inv.quitar = null; }
+    pintarInvitado();
+    if (!$('ds-invitar-caja').hidden) { renderInvitarLista(); }
+  });
+  inv.timer = setTimeout(function () {
+    if (duelo && duelo.invitaciones[id] === inv && inv.estado === 'pendiente') {
+      ranking.responderInvitacion(id, 'cancelada').catch(function (e) { console.error(e); });
+    }
+  }, INV_SEG * 1000);
+}
 async function desafiar(j, boton) {
-  if (duelo) { aviso('Ya estás en una sala de duelo.'); return; }
+  if (duelo && duelo.sala && duelo.sala.estado === 'jugando') { aviso('Esperá a que termine la ronda para invitar.'); return; }
   boton.disabled = true;
+  const txt = boton.textContent;
   boton.textContent = 'Enviando…';
   try {
-    const p = puestoActual();
-    const codigo = await ranking.crearSala(jugador.nombre, p.id, preguntasDuelo(p), identidadPropia());
-    entrarSala(codigo);
-    const id = await ranking.invitar({ deNombre: jugador.nombre, para: j.id, paraNombre: j.nombre, puesto: p.id, codigo: codigo });
-    if (!duelo || duelo.codigo !== codigo) { ranking.responderInvitacion(id, 'cancelada'); return; }
-    duelo.invitacion = { id: id, nombre: j.nombre, estado: 'pendiente' };
-    pintarInvitado();
-    duelo.quitarInvEnviada = ranking.escucharInvitacion(id, function (inv) {
-      if (!duelo || !duelo.invitacion || duelo.invitacion.id !== id) { return; }
-      const est = inv ? inv.estado : 'cancelada';
-      if (est === duelo.invitacion.estado) { return; }
-      duelo.invitacion.estado = est;
-      clearTimeout(duelo.timerInv);
-      if (est === 'aceptada') { aviso('✅ ' + j.nombre + ' aceptó el desafío'); Sonido.ok(); }
-      else if (est === 'rechazada') { aviso('🙅 ' + j.nombre + ' no puede ahora'); }
-      else if (est === 'cancelada') { aviso('⌛ ' + j.nombre + ' no respondió a tiempo'); }
-      pintarInvitado();
-    });
-    duelo.timerInv = setTimeout(function () {
-      if (duelo && duelo.invitacion && duelo.invitacion.id === id && duelo.invitacion.estado === 'pendiente') {
-        ranking.responderInvitacion(id, 'cancelada').catch(function (e) { console.error(e); });
-      }
-    }, INV_SEG * 1000);
+    if (!duelo) { await crearGrupo(); }
+    await enviarInvitacion(j);
+    if (!$('ds-invitar-caja').hidden) { renderInvitarLista(); }
   } catch (e) {
     console.error(e);
-    aviso('No se pudo enviar el desafío. Revisá tu conexión.');
-    boton.disabled = false;
-    boton.textContent = '⚔️ Desafiar';
+    aviso('No se pudo enviar la invitación. Revisá tu conexión.');
+  } finally {
+    if (boton.isConnected) { boton.disabled = false; boton.textContent = txt; }
   }
 }
 function pintarInvitado() {
   const caja = $('ds-invitado');
-  const inv = duelo && duelo.invitacion;
-  if (!inv) { caja.hidden = true; return; }
-  caja.textContent = {
-    pendiente: '⚔️ Desafío enviado a ' + inv.nombre + '. Esperando que acepte…',
-    aceptada: '✅ ' + inv.nombre + ' aceptó: está entrando a la sala.',
-    rechazada: '🙅 ' + inv.nombre + ' no puede ahora. Podés desafiar a otra persona o compartir el código.',
-    cancelada: '⌛ ' + inv.nombre + ' no respondió. Podés desafiar a otra persona o compartir el código.'
-  }[inv.estado] || '';
+  const invs = duelo ? Object.keys(duelo.invitaciones).map(function (id) { return duelo.invitaciones[id]; }) : [];
+  // Solo se muestran las recientes: pendientes y las que respondieron.
+  const vis = invs.slice(-6);
+  if (!vis.length) { caja.hidden = true; return; }
+  caja.innerHTML = '';
+  vis.forEach(function (inv) {
+    caja.append(el('div', 'inv-fila ' + inv.estado, {
+      pendiente: '⏳ ' + inv.nombre + ': invitación enviada…',
+      aceptada: '✅ ' + inv.nombre + ' aceptó',
+      rechazada: '🙅 ' + inv.nombre + ' no puede ahora',
+      cancelada: '⌛ ' + inv.nombre + ' no respondió'
+    }[inv.estado] || inv.nombre));
+  });
   caja.hidden = false;
 }
 
@@ -1960,10 +2544,10 @@ function recibirInvitaciones(lista) {
 function mostrarInvitacion(inv) {
   invActual = inv;
   pintarAvatar($('inv-avatar'), inv.deNombre);
-  $('inv-titulo').textContent = '⚔️ ' + inv.deNombre + ' te desafía a un duelo';
+  $('inv-titulo').textContent = '⚔️ ' + inv.deNombre + ' te invita a su grupo de estudio';
   const p = puestoPorId(inv.puesto);
-  $('inv-sub').textContent = 'Temario de ' + (p ? p.corto : inv.puesto) + ' · ' + DUELO_PREG + ' preguntas'
-    + (ocupado() ? '. Si aceptás, dejás lo que estás jugando.' : '.');
+  $('inv-sub').textContent = 'Temario de ' + (p ? p.corto : inv.puesto)
+    + (duelo ? '. Si aceptás, salís de tu grupo actual.' : ocupado() ? '. Si aceptás, dejás lo que estás jugando.' : '.');
   $('invitacion').hidden = false;
   Sonido.medalla();
   vibrar([120, 80, 120]);
@@ -1990,10 +2574,13 @@ async function aceptarInvitacion() {
   // Deja lo que estaba haciendo.
   if (partida && partida.modo === 'simulacro' && !partida.terminado) { partida.terminado = true; clearInterval(relojSim); }
   detenerReloj();
+  dejarTopVivo();
   partida = null;
   if (duelo) {
-    if (duelo.sala && duelo.sala.estado === 'espera') { try { await ranking.salirSala(duelo.codigo); } catch (e) { console.error(e); } }
-    limpiarDuelo();
+    if (duelo.codigo === inv.codigo) { ranking.responderInvitacion(inv.id, 'aceptada').catch(function () {}); return; }
+    const cod = duelo.codigo, sala = duelo.sala;
+    limpiarDuelo(true);
+    try { await ranking.salirSala(cod, sala ? siguienteAnfitrion(sala) : null); } catch (e) { console.error(e); }
   }
   try {
     await ranking.responderInvitacion(inv.id, 'aceptada');
@@ -2002,7 +2589,7 @@ async function aceptarInvitacion() {
     entrarSala(inv.codigo);
   } catch (e) {
     console.error(e);
-    aviso('No se pudo entrar al duelo. Revisá tu conexión.');
+    aviso('No se pudo entrar al grupo. Revisá tu conexión.');
     irInicio();
   }
 }
@@ -2153,21 +2740,31 @@ function enlazar() {
   $('btn-crear-sala').addEventListener('click', crearSalaDuelo);
   $('f-unirse').addEventListener('submit', unirseSalaDuelo);
   $('dm-codigo').addEventListener('input', function (e) { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); $('dm-error').hidden = true; });
-  $('btn-sala-salir').addEventListener('click', salirDuelo);
+  $('btn-sala-salir').addEventListener('click', function () { salirDuelo(); });
   $('btn-sala-compartir').addEventListener('click', invitarSala);
-  $('btn-sala-empezar').addEventListener('click', function () {
-    if (!soyHost() || jugadoresSala(duelo.sala).length < 2) { return; }
-    $('btn-sala-empezar').disabled = true;
-    ranking.actualizarSala(duelo.codigo, { estado: 'jugando', idx: 0, fase: 'pregunta' });
-  });
+  $('btn-sala-invitar').addEventListener('click', function () { $('ds-invitar-caja').hidden = false; renderInvitarLista(); });
+  $('btn-invitar-cerrar').addEventListener('click', function () { $('ds-invitar-caja').hidden = true; });
+  $('btn-sala-empezar').addEventListener('click', function (e) { empezarRonda(e.currentTarget); });
+  $('btn-sala-tomar').addEventListener('click', tomarControl);
+  $('btn-sala-guardar').addEventListener('click', guardarGrupo);
+  ['ds-op-puesto', 'ds-op-n', 'ds-op-t', 'ds-op-modo'].forEach(function (id) { $(id).addEventListener('change', cambiarOpcion); });
+  $('btn-dp-listo').addEventListener('click', function () { confirmarDuelo(null, false); });
   $('btn-dp-sig').addEventListener('click', siguienteDuelo);
-  $('btn-df-otro').addEventListener('click', function () { limpiarDuelo(); abrirDuelo(); });
-  $('btn-df-inicio').addEventListener('click', function () { limpiarDuelo(); irInicio(); });
+  $('btn-df-otra').addEventListener('click', function (e) { empezarRonda(e.currentTarget); });
+  $('btn-df-sala').addEventListener('click', function () { if (duelo) { duelo.verSala = true; renderSala(); } });
+  $('btn-df-salir').addEventListener('click', function () { salirDuelo(); });
+  document.querySelectorAll('[data-reportar]').forEach(function (b) { b.addEventListener('click', function () { abrirReporte(b.dataset.preg); }); });
   document.querySelectorAll('[data-volver]').forEach(function (b) { b.addEventListener('click', irInicio); });
   document.querySelectorAll('#t-orden .tab').forEach(function (t) {
     t.addEventListener('click', function () { ordenTop = t.dataset.o; suscribirTop(puestoActual()); });
   });
   $('btn-practica').addEventListener('click', abrirModalTema);
+  $('btn-jugadores').addEventListener('click', abrirJugadores);
+  $('pj-buscar').addEventListener('input', renderListaJugadores);
+  document.querySelectorAll('#pj-filtro .tab').forEach(function (t) { t.addEventListener('click', function () { filtroJug = t.dataset.f; renderListaJugadores(); }); });
+  $('f-reporte').addEventListener('submit', enviarReporte);
+  $('btn-rep-no').addEventListener('click', function () { $('m-reporte').close(); });
+  $('op-rapido').addEventListener('change', function (e) { perfilCfg().girarRapido = e.target.checked; guardarProg(); });
   $('i-puesto').addEventListener('click', abrirModalPuesto);
   $('btn-ranking').addEventListener('click', abrirModalRanking);
   $('btn-girar').addEventListener('click', girar);
@@ -2179,8 +2776,8 @@ function enlazar() {
   $('btn-marca').addEventListener('click', function () {
     if (!jugador) { return; }
     if (duelo) {
-      if (duelo.sala && duelo.sala.estado === 'jugando' && !confirm('¿Salir del duelo?')) { return; }
-      salirDuelo(); return;
+      if (!confirm('¿Salir del grupo? Podés volver a entrar con el código ' + duelo.codigo + '.')) { return; }
+      salirDuelo(true); return;
     }
     if (partida && partida.modo === 'simulacro' && !partida.terminado) {
       if (!confirm('¿Salir del simulacro? Se pierde este intento.')) { return; }
@@ -2240,7 +2837,10 @@ function prepararMovil() {
   red();
 }
 
+let panelPedido = false;
 (async function arrancar() {
+  codigoEnLink();
+  panelPedido = new URL(location.href).searchParams.get('panel') === '1';
   enlazar();
   prepararMovil();
   aplicarPreferencias();
@@ -2255,8 +2855,12 @@ function prepararMovil() {
     if (!prog) { cargarProg(); }
     irInicio();
     iniciarPresencia();
-    revisarInscripcion();
+    revisarInscripcion().then(function () { setTimeout(mostrarNovedades, 600); });
     publicarPerfil();
+    const salaPrev = sessionStorage.getItem('andeJuego.salaActual');
+    if (panelPedido) { abrirPanel(); }
+    else if (sessionStorage.getItem('andeJuego.salaLink')) { entrarPorLink(); }
+    else if (salaPrev) { entrarSala(salaPrev, true); }
   } else {
     jugador = null;
     iniciarRegistro();

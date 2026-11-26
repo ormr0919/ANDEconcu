@@ -4,7 +4,9 @@ Juego de preguntas tipo ruleta para estudiar. Es una guía de estudio **no ofici
 
 ## Qué incluye
 
-- **427 preguntas** de opción múltiple, de dificultad media y media-alta (249 media-alta). Cada una tiene su explicación y la fuente oficial de la que sale.
+- **810 preguntas** de opción múltiple, de dificultad media y media-alta (397 media-alta). Cada una tiene su explicación y la fuente oficial de la que sale.
+- **Gráficos en 159 preguntas:** circuitos en serie, paralelo y mixtos, nodos y mallas, triángulo de potencias, transformadores, estrella y triángulo, ondas senoidales, pinza amperimétrica, planillas de Excel con la barra de fórmulas, tablas y diagramas de caja. Se dibujan en SVG/HTML (`js/figuras.js`), sin imágenes.
+- **Sin repeticiones:** el juego recuerda cuándo viste cada pregunta y casi no repite las recientes. Muestra cuántas preguntas del temario quedan sin ver y tiene el modo «Solo preguntas nuevas».
 - **Puestos:**
   - **Lector Distribuidor II** (CPI-07): 6 bloques.
   - **Operador de Estaciones y Subestaciones IV** (CPI-08): 7 bloques.
@@ -20,14 +22,18 @@ Juego de preguntas tipo ruleta para estudiar. Es una guía de estudio **no ofici
   - Entrenamiento personalizado.
   - Práctica por tema.
   - Repaso de errores.
-  - Duelo de estudio de 2 a 4 personas.
-  - **En línea ahora:** muestra quién tiene el juego abierto y permite desafiarlo. Le llega una invitación que puede aceptar durante 60 segundos.
+  - **Duelos y grupos de 2 a 10 personas:** el grupo se mantiene entre rondas («Otra ronda»), se puede salir en cualquier momento y el anfitrión pasa a otro miembro. El anfitrión elige temario, 5/10/15 preguntas, 30/45/60 s y el modo «Mixto» o «Repaso del grupo» (las áreas que más les cuestan). Cada uno puede cambiar su respuesta hasta tocar «✓ Listo»; se revela cuando todos están listos o se acaba el tiempo. Al revelar, la tabla del grupo se reacomoda con animación y hay reacciones rápidas. Invitación por link (`?sala=CODIGO`), por WhatsApp o a varias personas en línea a la vez. «Mis grupos» guarda grupos para invitarlos de una vez. Si se recarga la página, vuelve solo al grupo.
+  - **En línea ahora:** muestra quién tiene el juego abierto y permite invitarlo. Le llega una invitación que puede aceptar durante 60 segundos.
+  - **Girar rápido** y, en la partida con ranking, un indicador animado de «vas X.º en el top».
 - **Perfil:** cada persona ve sus récords, su mejor racha sin errores y su dominio por área con colores: verde ≥ 80 %, ámbar 60–79 %, rojo < 60 %. El **plan de refuerzo** y el **gráfico de simulacros** son privados: solo los ve cada jugador.
 - **Niveles:** del 1 al 30, con títulos del oficio (Aprendiz → Leyenda del SIN). La experiencia sale de aciertos, simulacros aprobados, duelos ganados, metas cumplidas y plenos. Al subir de nivel hay una celebración y se desbloquean avatares, colores y marcos.
-- **Insignias:** 26 en total (rachas, plenos, constancia, simulacros, duelos, «Experto en» cada área…), con una vitrina de 3 para mostrar.
+- **Insignias:** 29 en total (incluye «Estudio en grupo», «Profe» y «Líder del grupo») , con una vitrina de 3 para mostrar.
 - **Personalizar:** nombre, avatar, color, marco, frase, vitrina, puestos a los que se postula, meta diaria y preferencias (aparecer en línea, recibir desafíos, perfil privado, sonido, vibración y letra grande).
 - **Compañeros de estudio (★)** y una **tarjeta del perfil** para compartir por WhatsApp.
-- **Tops por puesto:** por puntaje y por racha sin errores, actualizados en tiempo real.
+- **Tops por puesto:** por puntaje, **semanal** (se reinicia cada lunes) y por racha sin errores, actualizados en tiempo real.
+- **👥 Jugadores:** cuántas personas están inscriptas y quiénes son (nivel, puestos, última actividad), con buscador y filtro por puesto.
+- **Reportar un error** en cualquier pregunta, con motivos cerrados. Se ven en el panel privado (`?panel=1`), que muestra además inscriptos, actividad y partidas por puesto.
+- **Novedades:** un aviso que aparece una sola vez por versión.
 - **Memoria:** el progreso se guarda solo después de cada respuesta. Con Firebase, además se guarda una copia en la nube.
 - **Pensado para el celular:** se puede instalar como app, funciona sin conexión (salvo el ranking y los duelos), vibra al responder y permite compartir el resultado por WhatsApp.
 
@@ -52,7 +58,7 @@ La base de datos de Firebase es independiente del sitio: publicar una versión n
 
 ## Actualizar el juego
 
-- **Preguntas:** están en `js/preguntas-cpi-1.js`, `js/preguntas-cpi-2.js`, `js/preguntas-ing.js` y `js/preguntas-extra.js`. Formato: `[categoría, dificultad, pregunta, [correcta, incorrecta, incorrecta, incorrecta], explicación, fuente]`.
+- **Preguntas:** están en `js/preguntas-cpi-1.js`, `js/preguntas-cpi-2.js`, `js/preguntas-cpi3.js`, `js/preguntas-ing.js`, `js/preguntas-ing2.js` y `js/preguntas-extra.js`. Formato: `[categoría, dificultad, pregunta, [correcta, incorrecta, incorrecta, incorrecta], explicación, fuente, gráfico opcional]`. Los gráficos de los bancos anteriores están en `js/figuras-banco.js` (clave: id de la pregunta).
 - Después de cada cambio, subí el número de `VERSION` en `sw.js` (por ejemplo, `camino-v5`) para que los celulares descarguen la versión nueva.
 
 ## Fuentes
